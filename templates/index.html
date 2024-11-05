@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}"
+    />
+    <title>Setup</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <div class="logo">
+          <i class="fas fa-lungs pulse"></i>
+        </div>
+        <h1 class="title">TrachHub</h1>
+        <p class="subtitle">Smart Tracheostomy Monitoring System</p>
+      </div>
+
+      <div class="card">
+        <!-- Welcome Step -->
+        <div id="welcome" class="setup-step active">
+          <h2 class="section-title">Welcome to TrachHub</h2>
+          <p style="margin-bottom: 24px">
+            Let's get your device set up and connected. This wizard will guide
+            you through the process.
+          </p>
+          <button class="button" onclick="startSetup()">
+            <i class="fas fa-arrow-right"></i>
+            Begin Setup
+          </button>
+        </div>
+
+        <!-- WiFi Setup Step -->
+        <div id="wifi-setup" class="setup-step">
+          <h2 class="section-title">WiFi Setup</h2>
+          <p class="section-subtitle">
+            Select your WiFi network to connect your TrachHub device
+          </p>
+
+          <button class="button" onclick="scanWiFi()">
+            <i class="fas fa-sync-alt"></i>
+            Scan for Networks
+          </button>
+
+          <div class="list-container" id="wifi-list"></div>
+        </div>
+
+        <!-- Bluetooth Setup Step -->
+        <div id="bluetooth-setup" class="setup-step">
+          <h2 class="section-title">
+            Now, let's connect to your TrachHub device
+          </h2>
+          <button class="button" onclick="scanBluetooth()">
+            <i class="fab fa-bluetooth"></i>
+            Scan for Devices
+          </button>
+          <div class="list-container" id="bluetooth-list"></div>
+        </div>
+
+        <!-- Complete Step -->
+        <div id="complete" class="setup-step">
+          <div style="text-align: center; margin-bottom: 24px">
+            <i
+              class="fas fa-check-circle"
+              style="
+                font-size: 48px;
+                color: var(--success-color);
+                margin-bottom: 16px;
+              "
+            ></i>
+            <h2 class="section-title" style="margin: 16px 0">
+              Setup Complete!
+            </h2>
+            <p>Your TrachHub device is now connected and ready to use.</p>
+          </div>
+
+          <div
+            style="
+              background: var(--background-color);
+              padding: 16px;
+              border-radius: 12px;
+              margin-bottom: 24px;
+            "
+          >
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 12px;
+              "
+            >
+              <i class="fas fa-wifi" style="color: var(--primary-red)"></i>
+              <span
+                >Connected to:
+                <strong id="connected-wifi">Not Connected</strong></span
+              >
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px">
+              <i class="fab fa-bluetooth" style="color: var(--primary-red)"></i>
+              <span
+                >Device Status:
+                <strong id="device-status">Not Connected</strong></span
+              >
+            </div>
+          </div>
+
+          <button class="button" onclick="startMonitoring()">
+            <i class="fas fa-chart-line"></i>
+            Start Monitoring
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- WiFi Password Modal -->
+    <div id="wifi-password-modal" class="modal-overlay">
+      <div class="modal">
+        <div class="modal-title">Connect to WiFi</div>
+        <div class="modal-content">
+          <div class="network-name" id="selected-network-name"></div>
+          <input
+            type="password"
+            id="wifi-password"
+            class="input-field"
+            placeholder="Enter WiFi Password"
+          />
+        </div>
+        <div class="modal-buttons">
+          <button class="modal-button secondary" onclick="closeWiFiModal()">
+            Cancel
+          </button>
+          <button class="modal-button primary" onclick="connectWiFi()">
+            Connect
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status Message -->
+    <div id="status" class="status"></div>
+
+    <script>
+      let currentStep = "welcome";
+      let selectedWiFi = null;
+      let selectedDevice = null;
+      let monitoringInterval = null;
+
+      function updateStepIndicator(step) {
+        const steps = {
+          welcome: 1,
+          "wifi-setup": 2,
+          "bluetooth-setup": 3,
+          complete: 4,
+        };
+
+        document.querySelectorAll(".step-dot").forEach((dot, index) => {
+          dot.classList.remove("active");
+          if (index < steps[step]) {
+            dot.classList.add("active");
+          }
+        });
+      }
+
+      function showStep(step) {
+        document.querySelectorAll(".setup-step").forEach((el) => {
+          el.classList.remove("active");
+          el.style.display = "none";
+        });
+
+        const stepElement = document.getElementById(step);
+        stepElement.style.display = "block";
+        setTimeout(() => stepElement.classList.add("active"), 10);
+
+        currentStep = step;
+        updateStepIndicator(step);
+      }
+
+      function showStatus(message, isError = false) {
+        const status = document.getElementById("status");
+        status.innerHTML = `
+                <i class="fas fa-${
+                  isError ? "exclamation-circle" : "check-circle"
+                }"></i>
+                ${message}
+            `;
+        status.className = `status ${isError ? "error" : "success"} visible`;
+
+        setTimeout(() => {
+          status.classList.remove("visible");
+        }, 3000);
+      }
+
+      function startSetup() {
+        showStep("wifi-setup");
+        scanWiFi();
+      }
+
+      function addLoadingAnimation(element) {
+        element.innerHTML = `
+                <div class="loading-spinner">
+                    <i class="fas fa-spinner fa-spin"></i>
+                </div>
+            `;
+        element.disabled = true;
+      }
+
+      function removeLoadingAnimation(element, originalContent) {
+        element.innerHTML = originalContent;
+        element.disabled = false;
+      }
+
+      async function scanWiFi() {
+        const button = document.querySelector("#wifi-setup .button");
+        const originalContent = button.innerHTML;
+
+        try {
+          addLoadingAnimation(button);
+          const response = await fetch("/api/wifi/scan");
+          const data = await response.json();
+          const wifiList = document.getElementById("wifi-list");
+          wifiList.innerHTML = "";
+
+          if (data.networks.length === 0) {
+            wifiList.innerHTML = `
+                        <div class="list-item">
+                            <i class="fas fa-exclamation-circle"></i>
+                            No networks found
+                        </div>
+                    `;
+            return;
+          }
+
+          data.networks.forEach((network) => {
+            const div = document.createElement("div");
+            div.className = "list-item";
+            div.innerHTML = `
+                        <i class="fas fa-wifi"></i>
+                        <span>${network}</span>
+                    `;
+            div.onclick = () => selectWiFi(network);
+            wifiList.appendChild(div);
+          });
+        } catch (error) {
+          showStatus("Failed to scan WiFi networks", true);
+        } finally {
+          removeLoadingAnimation(button, originalContent);
+        }
+      }
+      function selectWiFi(network) {
+        selectedWiFi = network;
+        document.querySelectorAll("#wifi-list .list-item").forEach((el) => {
+          el.classList.remove("selected");
+          if (el.textContent.includes(network)) {
+            el.classList.add("selected");
+          }
+        });
+
+        // Show modal instead of form
+        const modal = document.getElementById("wifi-password-modal");
+        const networkName = document.getElementById("selected-network-name");
+        networkName.textContent = network;
+        modal.style.display = "block";
+        document.getElementById("wifi-password").focus();
+      }
+
+      function closeWiFiModal() {
+        const modal = document.getElementById("wifi-password-modal");
+        modal.style.display = "none";
+        document.getElementById("wifi-password").value = "";
+      }
+
+      // Add event listener for pressing Enter in password field
+      document
+        .getElementById("wifi-password")
+        .addEventListener("keypress", function (e) {
+          if (e.key === "Enter") {
+            connectWiFi();
+          }
+        });
+
+      function getSignalDots(rssi) {
+        const strength = getSignalStrength(rssi);
+        const totalDots = 4;
+        let activeDots;
+
+        switch (strength) {
+          case "excellent":
+            activeDots = 4;
+            break;
+          case "good":
+            activeDots = 3;
+            break;
+          case "fair":
+            activeDots = 2;
+            break;
+          case "poor":
+            activeDots = 1;
+            break;
+          default:
+            activeDots = 0;
+        }
+
+        return Array(totalDots)
+          .fill(0)
+          .map(
+            (_, i) =>
+              `<span class="signal-dot${
+                i < activeDots ? " active" : ""
+              }"></span>`
+          )
+          .join("");
+      }
+
+      // Modified connectWiFi function
+      async function connectWiFi() {
+        const password = document.getElementById("wifi-password").value;
+        if (!password) {
+          showStatus("Please enter a password", true);
+          return;
+        }
+
+        try {
+          const response = await fetch("/api/wifi/connect", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              ssid: selectedWiFi,
+              password: password,
+            }),
+          });
+          const data = await response.json();
+          if (data.success) {
+            closeWiFiModal();
+            showStatus("Successfully connected to WiFi");
+            setTimeout(() => {
+              showStep("bluetooth-setup");
+              scanBluetooth();
+            }, 1000);
+          } else {
+            showStatus("Failed to connect to WiFi", true);
+          }
+        } catch (error) {
+          showStatus("Failed to connect to WiFi", true);
+        }
+      }
+      async function scanBluetooth() {
+        const button = document.querySelector("#bluetooth-setup .button");
+        const originalContent = button.innerHTML;
+        const bluetoothList = document.getElementById("bluetooth-list");
+        let scanAttempts = 0;
+        const maxAttempts = 3;
+
+        async function attemptScan() {
+          try {
+            button.innerHTML =
+              '<i class="fas fa-spinner fa-spin"></i> Scanning...';
+            button.disabled = true;
+
+            bluetoothList.innerHTML = `
+                        <div class="list-item scanning">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <span>Scanning for TrachHub devices... (Attempt ${
+                              scanAttempts + 1
+                            }/${maxAttempts})</span>
+                        </div>
+                    `;
+
+            const response = await fetch("/api/bluetooth/scan", {
+              signal: AbortSignal.timeout(10000),
+            });
+
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            bluetoothList.innerHTML = "";
+
+            if (data.devices && data.devices.length > 0) {
+              // Sort devices by signal strength (RSSI)
+              const sortedDevices = data.devices
+                .map((device) => ({
+                  ...device,
+                  // Ensure RSSI is a number for sorting
+                  rssi: typeof device.rssi === "number" ? device.rssi : -100,
+                }))
+                .sort((a, b) => b.rssi - a.rssi); // Sort by strongest signal first
+              // Replace only the device rendering part in your scanBluetooth function
+              sortedDevices.forEach((device, index) => {
+                const div = document.createElement("div");
+                div.className = "list-item";
+                const signalStrength = getSignalStrength(device.rssi);
+
+                div.innerHTML = `
+        <div class="device-item">
+            <div class="device-icon-wrapper">
+                <div class="device-icon">
+                    <i class="fab fa-bluetooth"></i>
+                </div>
+                <div class="signal-indicator ${signalStrength}">
+                    <span class="signal-dot${
+                      device.rssi >= -50 ? " active" : ""
+                    }"></span>
+                    <span class="signal-dot${
+                      device.rssi >= -65 ? " active" : ""
+                    }"></span>
+                    <span class="signal-dot${
+                      device.rssi >= -75 ? " active" : ""
+                    }"></span>
+                    <span class="signal-dot${
+                      device.rssi >= -85 ? " active" : ""
+                    }"></span>
+                </div>
+            </div>
+            <div class="device-info">
+                <div class="device-name">${
+                  device.name || "TrachHub Device"
+                }</div>
+                <div class="device-details">
+                    <span class="signal-text ${signalStrength}">
+                        Signal: ${
+                          signalStrength.charAt(0).toUpperCase() +
+                          signalStrength.slice(1)
+                        }
+                    </span>
+                    <span class="rssi-value">${device.rssi} dBm</span>
+                </div>
+            </div>
+            <div class="rank-wrapper">
+           <div class="rank-indicator${index === 0 ? " best-signal" : ""}">
+    ${
+      index === 0
+        ? '<i class="fas fa-star" style="color: white;"></i>'
+        : `#${index + 1}`
+    }
+</div>
+            </div>
+        </div>
+    `;
+
+                div.onclick = () => connectBluetoothDevice(device);
+                bluetoothList.appendChild(div);
+              });
+
+              // Add a helper message if multiple devices are found
+              if (sortedDevices.length > 1) {
+                const helperMessage = document.createElement("div");
+                helperMessage.className = "helper-message";
+                helperMessage.innerHTML = `
+                                <i class="fas fa-info-circle"></i>
+                                Devices are sorted by signal strength. Select the device with the strongest signal for best connection.
+                            `;
+                bluetoothList.appendChild(helperMessage);
+              }
+
+              return true;
+            } else {
+              throw new Error("No devices found");
+            }
+          } catch (error) {
+            console.error(`Scan attempt ${scanAttempts + 1} failed:`, error);
+
+            if (scanAttempts < maxAttempts - 1) {
+              scanAttempts++;
+              await new Promise((resolve) => setTimeout(resolve, 2000));
+              return attemptScan();
+            }
+
+            bluetoothList.innerHTML = `
+                        <div class="list-item error-item">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <div>
+                                <div>Scanning Failed</div>
+                                <div class="text-sm">
+                                    ${
+                                      error.message === "No devices found"
+                                        ? "No TrachHub devices found. Please ensure your device is powered on and nearby."
+                                        : "Connection failed. Please check your network connection and try again."
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    `;
+            showStatus("Failed to scan for devices. Please try again.", true);
+            return false;
+          } finally {
+            button.innerHTML = originalContent;
+            button.disabled = false;
+          }
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        return attemptScan();
+      }
+
+      async function startSetup() {
+        try {
+          const response = await fetch("/api/wifi/current");
+          const wifiStatus = await response.json();
+
+          showStep("wifi-setup");
+          await scanWiFi(wifiStatus.ssid);
+
+          if (wifiStatus.connected) {
+            const skipButton = document.createElement("button");
+            skipButton.className = "button secondary";
+            skipButton.innerHTML = `
+                        <i class="fas fa-forward"></i>
+                        Skip WiFi Setup (Connected to ${wifiStatus.ssid})
+                    `;
+            skipButton.onclick = () => {
+              showStatus(`Using existing WiFi connection: ${wifiStatus.ssid}`);
+              showStep("bluetooth-setup");
+              scanBluetooth();
+            };
+
+            const scanButton = document.querySelector("#wifi-setup .button");
+            scanButton.parentNode.insertBefore(skipButton, scanButton);
+          }
+        } catch (error) {
+          console.error("Error checking WiFi status:", error);
+          showStep("wifi-setup");
+          scanWiFi();
+        }
+      }
+
+      async function scanWiFi(currentSsid = null) {
+        const button = document.querySelector("#wifi-setup .button");
+        const originalContent = button.innerHTML;
+
+        try {
+          button.innerHTML =
+            '<i class="fas fa-spinner fa-spin"></i> Scanning...';
+          button.disabled = true;
+
+          const response = await fetch("/api/wifi/scan");
+          const data = await response.json();
+          const wifiList = document.getElementById("wifi-list");
+          wifiList.innerHTML = "";
+
+          if (data.networks.length === 0) {
+            wifiList.innerHTML = `
+                        <div class="list-item">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <span>No networks found</span>
+                        </div>
+                    `;
+            return;
+          }
+
+          data.networks.forEach((network) => {
+            const div = document.createElement("div");
+            div.className = "list-item";
+
+            const isConnected = network === currentSsid;
+
+            div.innerHTML = `
+                        <div class="wifi-network-item">
+                            <div class="network-icon">
+                                <i class="fas fa-wifi"></i>
+                                ${
+                                  isConnected
+                                    ? '<span class="connected-indicator">✓</span>'
+                                    : ""
+                                }
+                            </div>
+                            <div class="network-info">
+                                <div class="network-name">${network}</div>
+                                ${
+                                  isConnected
+                                    ? '<div class="network-status">Currently Connected</div>'
+                                    : ""
+                                }
+                            </div>
+                        </div>
+                    `;
+
+            if (isConnected) {
+              div.classList.add("selected");
+              selectedWiFi = network;
+            }
+
+            div.onclick = () => selectWiFi(network);
+            wifiList.appendChild(div);
+          });
+        } catch (error) {
+          showStatus("Failed to scan WiFi networks", true);
+        } finally {
+          button.innerHTML = originalContent;
+          button.disabled = false;
+        }
+      }
+
+      const combinedStyles = `
+            /* Bluetooth Styles */
+            .device-item {
+                display: flex;
+                align-items: center;
+                gap: 16px;
+                width: 100%;
+            }
+
+            .device-icon {
+                position: relative;
+                width: 40px;
+                height: 40px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: var(--purple-light);
+                border-radius: 50%;
+            }
+
+            .device-icon i {
+                color: var(--brand-purple);
+                font-size: 20px;
+            }
+
+            .device-info {
+                flex: 1;
+            }
+
+            .device-name {
+                font-weight: 600;
+                color: var(--text-primary);
+                margin-bottom: 4px;
+            }
+
+            .device-details {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-size: 12px;
+            }
+
+            .signal-text {
+                font-weight: 500;
+            }
+
+            .signal-text.excellent { color: #059669; }
+            .signal-text.good { color: #2563eb; }
+            .signal-text.fair { color: #d97706; }
+            .signal-text.poor { color: #dc2626; }
+
+            .rssi-value {
+                color: var(--text-secondary);
+                font-size: 11px;
+            }
+
+            .device-rank {
+                padding-left: 8px;
+                border-left: 1px solid var(--border-color);
+            }
+
+            .rank-indicator {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                background: var(--purple-light);
+                color: var(--brand-purple);
+                font-size: 12px;
+                font-weight: 600;
+            }
+
+            .rank-indicator.best-signal {
+                background: var(--brand-purple);
+                color: white;
+            }
+
+            .helper-message {
+                margin-top: 16px;
+                padding: 12px;
+                background: var(--purple-light);
+                border-radius: 8px;
+                font-size: 13px;
+                color: var(--brand-purple);
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .helper-message i {
+                font-size: 16px;
+            }
+
+            /* WiFi Styles */
+            .button.secondary {
+                background: var(--brown-light);
+                color: var(--brand-brown);
+                margin-bottom: 12px;
+            }
+
+            .button.secondary:hover {
+                background: var(--brand-brown);
+                color: white;
+            }
+
+            .wifi-network-item {
+                display: flex;
+                align-items: center;
+                gap: 16px;
+                width: 100%;
+            }
+
+            .network-icon {
+                position: relative;
+                width: 40px;
+                height: 40px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: var(--purple-light);
+                border-radius: 50%;
+            }
+
+            .network-icon i {
+                color: var(--brand-purple);
+                font-size: 20px;
+            }
+
+            .connected-indicator {
+                position: absolute;
+                bottom: -2px;
+                right: -2px;
+                width: 18px;
+                height: 18px;
+                background: var(--brand-purple);
+                color: white;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 12px;
+                border: 2px solid white;
+            }
+
+            .network-info {
+                flex: 1;
+            }
+
+            .network-name {
+                font-weight: 600;
+                color: var(--text-primary);
+            }
+
+            .network-status {
+                font-size: 12px;
+                color: var(--brand-purple);
+                margin-top: 2px;
+            }
+
+            .list-item.selected .network-icon {
+                background: var(--brand-purple);
+            }
+
+            .list-item.selected .network-icon i {
+                color: white;
+            }
+
+            .section-title {
+                margin-bottom: 8px;
+            }
+
+            .section-subtitle {
+                color: var(--text-secondary);
+                font-size: 14px;
+                margin-bottom: 24px;
+            }
+        `;
+
+      const styleSheet = document.createElement("style");
+      styleSheet.textContent = combinedStyles;
+      document.head.appendChild(styleSheet);
+
+      async function connectBluetoothDevice(device) {
+        const selectedItem = event.currentTarget;
+        const originalContent = selectedItem.innerHTML;
+
+        try {
+          selectedItem.innerHTML = `
+                    <i class="fas fa-spinner fa-spin"></i>
+                    Connecting...
+                `;
+
+          const response = await fetch("/api/bluetooth/connect", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              address: device.address,
+            }),
+          });
+
+          const data = await response.json();
+          if (data.success) {
+            showStatus("Successfully connected to device");
+            selectedDevice = device;
+            setTimeout(() => {
+              showStep("complete");
+              updateDeviceInfo();
+            }, 1000);
+          } else {
+            showStatus("Failed to connect to device", true);
+            selectedItem.innerHTML = originalContent;
+          }
+        } catch (error) {
+          showStatus("Failed to connect to device", true);
+          selectedItem.innerHTML = originalContent;
+        }
+      }
+
+      async function updateDeviceInfo() {
+        try {
+          const response = await fetch("/api/status");
+          const status = await response.json();
+
+          const wifiElement = document.getElementById("connected-wifi");
+          const deviceElement = document.getElementById("device-status");
+
+          wifiElement.textContent = status.connected_ssid || "Not Connected";
+          wifiElement.className = status.wifi_connected
+            ? "text-success"
+            : "text-danger";
+
+          deviceElement.textContent = status.bluetooth_connected
+            ? "Connected"
+            : "Disconnected";
+          deviceElement.className = status.bluetooth_connected
+            ? "text-success"
+            : "text-danger";
+
+          if (status.bluetooth_connected) {
+            updateDeviceReadings();
+          }
+        } catch (error) {
+          showStatus("Failed to update device status", true);
+        }
+      }
+
+      async function updateDeviceReadings() {
+        try {
+          const response = await fetch("/api/data");
+          const data = await response.json();
+
+          if (data.data && data.data.length > 0) {
+            const latestReading = data.data[data.data.length - 1];
+            console.log("Latest reading:", latestReading);
+          }
+        } catch (error) {
+          console.error("Failed to update readings:", error);
+        }
+      }
+
+      function startMonitoring() {
+        const button = document.querySelector("#complete .button");
+        button.innerHTML = `
+                <i class="fas fa-chart-line"></i>
+                Monitoring Active
+            `;
+        button.classList.add("pulse");
+
+        monitoringInterval = setInterval(updateDeviceInfo, 5000);
+        showStatus("Monitoring started");
+      }
+
+      window.addEventListener("beforeunload", () => {
+        if (monitoringInterval) {
+          clearInterval(monitoringInterval);
+        }
+      });
+
+      document.addEventListener("DOMContentLoaded", () => {
+        if (currentStep === "complete") {
+          updateDeviceInfo();
+        }
+      });
+
+      function getSignalStrength(rssi) {
+        if (rssi >= -50) return "excellent";
+        if (rssi >= -65) return "good";
+        if (rssi >= -75) return "fair";
+        return "poor";
+      }
+
+      function getSignalBars(rssi) {
+        const strength = getSignalStrength(rssi);
+        const bars = {
+          excellent: "●●●●",
+          good: "●●●○",
+          fair: "●●○○",
+          poor: "●○○○",
+        };
+        return bars[strength];
+      }
+    </script>
+  </body>
+</html>
