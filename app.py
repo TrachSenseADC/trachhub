@@ -333,6 +333,12 @@ def connect_wifi(ssid, password):
             )
             
             os.remove(profile_path)
+        elif platform.system() == "Darwin":
+            # macOS WiFi connection configuration
+            subprocess.run(
+                ['/usr/sbin/networksetup', '-setairportnetwork', 'en0', ssid, password],
+                check=True
+            )
         else:
             # Linux/Raspberry Pi WiFi connection configuration
             config = (
@@ -400,7 +406,7 @@ async def connect_bluetooth_device(address):
         logger.error(f"Error connecting to Bluetooth device: {e}")
         return False
 
-def start_background_tasks():
+async def start_background_tasks():
     """
     Launches a background asynchronous task to continuously monitor system and connection status.
     Primarily used for Bluetooth connection monitoring. Runs on a loop, checking connection status
@@ -624,9 +630,12 @@ def health_check():
     })
 
 start_time = time.time()
+async def main():
+    await start_background_tasks()
 
 if __name__ == '__main__':
     try:
+        asyncio.run(main())
         cli = sys.modules['flask.cli']
         cli.show_server_banner = lambda *x: None
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
