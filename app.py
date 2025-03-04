@@ -393,8 +393,12 @@ async def connect_bluetooth_device(address):
     Connection status is updated in `device_state`, and errors are logged if connection fails.
     """
     try:
-        success = await bluetooth_manager.connect(address)
-        device_state['bluetooth_connected'] = success
+        if await bluetooth_manager.is_paired(address):
+            logger.info(f"Device {address} is already paired. Skipping pairing.")
+            device_state['bluetooth_connection'] = True
+        else:
+            success = await bluetooth_manager.connect(address)
+            device_state['bluetooth_connected'] = success
         return success
     except Exception as e:
         logger.error(f"Error connecting to Bluetooth device: {e}")
