@@ -2,7 +2,6 @@
 set -eo pipefail
 
 
-# This only works on a Linux distro -- do we need to make it work on macOS? *1
 
 # friendly configuration for trachub installation
 INSTALL_DIR="$HOME/TrachHub"
