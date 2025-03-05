@@ -101,12 +101,18 @@ import os
 import signal
 from datetime import datetime
 import sys
+from pathlib import Path
 
+home_usr = Path.home()
+path_usr_log = "{}/TrachHub/trachhub.log".format(home_usr)
+
+
+print(path_usr_log)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('/var/log/trachhub.log') if platform.system() != "Windows" else logging.FileHandler('trachhub.log'),
+        logging.FileHandler(path_usr_log) if platform.system() != "Windows" else logging.FileHandler('trachhub.log'),
         logging.StreamHandler()
     ]
 )
@@ -400,13 +406,12 @@ async def connect_bluetooth_device(address):
         logger.error(f"Error connecting to Bluetooth device: {e}")
         return False
 
-def start_background_tasks():
+def start_background_tasks(loop):
     """
-    Launches a background asynchronous task to continuously monitor system and connection status.
-    Primarily used for Bluetooth connection monitoring. Runs on a loop, checking connection status
-    and logging any errors detected in periodic checks.
+    Launches background asynchronous tasks to continuously monitor system and connection status.
     
-    The monitoring task runs continuously until application termination.
+    Parameters:
+    - `loop` (asyncio.AbstractEventLoop): The event loop to run tasks on
     """
     async def monitor_system():
         while True:
@@ -418,11 +423,21 @@ def start_background_tasks():
                     logger.error(f"Error in monitoring: {e}")
             await asyncio.sleep(1)
 
-    asyncio.create_task(monitor_system())
+    loop.create_task(monitor_system())
 
-if platform.system() != "Windows":
-    # Initialize background tasks when running on a Linux/Raspberry Pi system
-    asyncio.create_task(start_background_tasks())
+def run_background_loop(loop):
+    """
+    Runs the event loop in a separate thread.
+    
+    Parameters:
+    - `loop` (asyncio.AbstractEventLoop): The event loop to run
+    """
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+# if platform.system() != "Windows":
+#     # Initialize background tasks when running on a Linux/Raspberry Pi system
+#     asyncio.create_task(start_background_tasks())
 
 # Routes with async support
 @app.route('/')
@@ -627,6 +642,22 @@ start_time = time.time()
 
 if __name__ == '__main__':
     try:
+
+        # Create a new event loop
+        background_loop = asyncio.new_event_loop()
+        
+        # Start the background loop in a separate thread
+        background_thread = threading.Thread(
+            target=run_background_loop, 
+            args=(background_loop,), 
+            daemon=True
+        )
+        background_thread.start()
+
+        # Start background tasks on this loop
+        start_background_tasks(background_loop)
+
+
         cli = sys.modules['flask.cli']
         cli.show_server_banner = lambda *x: None
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
