@@ -52,6 +52,7 @@ echo -e "\n🐍 step 5/6: preparing python environment..."
 python3 -m venv "$INSTALL_DIR/venv" || { echo "failed to create python virtual environment. see log."; exit 1; }
 source "$INSTALL_DIR/venv/bin/activate"
 response=$(curl -s https://raw.githubusercontent.com/TrachSenseADC/trachhub/refs/heads/setup/requirements.txt)
+cat "$response"
 echo "$response" | pip install --no-cache-dir -q -r /dev/stdin
 
 # launch trachub server in the background
