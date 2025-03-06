@@ -24,23 +24,23 @@ echo "--------------------------------------------------------------"
 exec > >(tee "$LOG_FILE") 2>&1 # *1
 
 # verify internet connectivity before proceeding
-echo -e "\n🔍 step 1/6: checking internet connection..."
+echo -e "\nstep 1/6: checking internet connection..."
 if ! ping -c 1 google.com &> /dev/null; then
   echo -e "\n❌ no internet. please connect to wi-fi and try again."
   exit 1
 fi
 
 # create necessary directories for the installation
-echo -e "\n📁 step 2/6: setting up folders..."
+echo -e "\nstep 2/6: setting up folders..."
 mkdir -p "$INSTALL_DIR" || { echo "could not create installation directory. check permissions."; exit 1; }
 
 # install system dependencies and tools required for trachub
-echo -e "\n🛠️ step 3/6: installing required system tools..."
+echo -e "\nstep 3/6: installing required system tools..."
 sudo apt-get update -qq # *1
 sudo apt-get install -y -qq python3 python3-pip git # *1
 
 # download or update trachub scripts from the remote repository
-echo -e "\n⬇️ step 4/6: downloading trachub scripts..."
+echo -e "\n⬇step 4/6: downloading trachub scripts..."
 if [ -d "$INSTALL_DIR/scripts/.git" ]; then
   git -C "$INSTALL_DIR/scripts" pull --quiet
 else
@@ -48,11 +48,11 @@ else
 fi
 
 # prepare python virtual environment and install dependencies
-echo -e "\n🐍 step 5/6: preparing python environment..."
+echo -e "\nstep 5/6: preparing python environment..."
 python3 -m venv "$INSTALL_DIR/venv" || { echo "failed to create python virtual environment. see log."; exit 1; }
 source "$INSTALL_DIR/venv/bin/activate"
 response=$(curl -s https://raw.githubusercontent.com/TrachSenseADC/trachhub/refs/heads/setup/requirements.txt -o requirements.txt)
-pip install --no-cache-dir -q -r requirements.txt
+python3 -m pip install --no-cache-dir -q -r requirements.txt
 
 # launch trachub server in the background
 echo -e "\n🚀 step 6/6: starting trachub server..."
