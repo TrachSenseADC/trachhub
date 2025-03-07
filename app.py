@@ -112,7 +112,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(path_usr_log) if platform.system() != "Windows" else logging.FileHandler('trachhub.log'),
+        logging.FileHandler(path_usr_log) if platform.system() != "Windows" else logging.FileHandler(path_usr_log),
         logging.StreamHandler()
     ]
 )
