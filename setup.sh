@@ -42,9 +42,9 @@ sudo apt-get install -y -qq python3 python3-pip git # *1
 # download or update trachub scripts from the remote repository
 echo -e "\n⬇step 4/6: downloading trachub scripts..."
 if [ -d "$INSTALL_DIR/scripts/.git" ]; then
-  git -C "$INSTALL_DIR/scripts" pull --quiet
+  git -C "$INSTALL_DIR/scripts" pull origin setup --quiet
 else
-  git clone --quiet "$SCRIPTS_SOURCE" "$INSTALL_DIR/scripts"
+  git clone --quiet -b setup "$SCRIPTS_SOURCE" "$INSTALL_DIR/scripts"
 fi
 
 # prepare python virtual environment and install dependencies
