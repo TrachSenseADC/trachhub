@@ -89,6 +89,7 @@ Modules:
 """
 
 from flask import Flask, render_template, jsonify, request
+import struct
 import subprocess
 import threading
 import time
@@ -556,7 +557,38 @@ def get_data():
             'error': 'Device not connected',
             'last_connection': device_state.get('last_bluetooth_connection')
         })
-    return jsonify({'data': []})  # gotta replace this with TrachSense's actual data collection
+    
+    try:
+        # Create a new event loop for the async operation
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            # The UUID for custom characteristic from esp32
+            characteristic = "00002a1f-0000-1000-8000-00805f9b34fb"
+            
+            # Read the data from the characteristic
+            data = loop.run_until_complete(bluetooth_manager.client.read_gatt_char(characteristic))
+            
+            # Parse the data (it's sent as a single byte)
+            value = struct.unpack('<B', data)[0]
+            
+            logger.info(f"Received breathing value from TrachSense: {value}")
+            
+            return jsonify({
+                'data': [value]
+            })
+        finally:
+            loop.close()
+            
+    except Exception as e:
+        error_message = f"Failed to read device data: {str(e)}"
+        logger.error(error_message)
+        return jsonify({
+            'data': [],
+            'error': error_message,
+            'last_connection': device_state.get('last_bluetooth_connection')
+        })
 
 def get_current_wifi():
     """
