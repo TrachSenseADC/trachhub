@@ -118,6 +118,7 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+background_loop = None
 
 app = Flask(__name__)
 
@@ -184,12 +185,26 @@ class BluetoothManager:
                 device_state['bluetooth_connected'] = True
                 device_state['last_bluetooth_connection'] = datetime.now().isoformat()
                 logger.info(f"Connected to device: {address}")
-                
+
+                # Start notification on the characteristic
+                characteristic = "00002a1f-0000-1000-8000-00805f9b34fb"
+                await self.client.start_notify(characteristic, self.notification_handler)
+                logger.info("Started notification on characteristic.")
+
                 asyncio.create_task(self.monitor_connection())
                 return True
             except Exception as e:
                 logger.error(f"Failed to connect: {e}")
                 return False
+
+    def notification_handler(self, sender, data):
+        try:
+            value = struct.unpack('<B', data)[0]
+            logger.info(f"Notification received from TrachSense: {value}")
+            device_state['device_data'] = value
+            self.last_data_time = datetime.now()
+        except Exception as e:
+            logger.error(f"Error in notification handler: {e}")
 
     def handle_disconnect(self, client):
         """
@@ -517,7 +532,12 @@ def wifi_connect_route():
 @app.route('/api/bluetooth/connect', methods=['POST'])
 def bluetooth_connect():
     data = request.get_json()
-    success = asyncio.run(connect_bluetooth_device(data['address']))
+    # Schedule the coroutine on the background loop and get the result
+    future = asyncio.run_coroutine_threadsafe(
+        connect_bluetooth_device(data['address']),
+        background_loop
+    )
+    success = future.result()
     return jsonify({'success': success})
 
 @app.route('/api/status')
@@ -558,35 +578,14 @@ def get_data():
             'last_connection': device_state.get('last_bluetooth_connection')
         })
     
-    try:
-        # Create a new event loop for the async operation
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            # The UUID for custom characteristic from esp32
-            characteristic = "00002a1f-0000-1000-8000-00805f9b34fb"
-            
-            # Read the data from the characteristic
-            data = loop.run_until_complete(bluetooth_manager.client.read_gatt_char(characteristic))
-            
-            # Parse the data (it's sent as a single byte)
-            value = struct.unpack('<B', data)[0]
-            
-            logger.info(f"Received breathing value from TrachSense: {value}")
-            
-            return jsonify({
-                'data': [value]
-            })
-        finally:
-            loop.close()
-            
-    except Exception as e:
-        error_message = f"Failed to read device data: {str(e)}"
-        logger.error(error_message)
+    # Return the last value received via notification
+    value = device_state.get('device_data')
+    if value is not None:
+        return jsonify({'data': [value]})
+    else:
         return jsonify({
             'data': [],
-            'error': error_message,
+            'error': 'No data received yet',
             'last_connection': device_state.get('last_bluetooth_connection')
         })
 
@@ -674,14 +673,12 @@ start_time = time.time()
 
 if __name__ == '__main__':
     try:
-
         # Create a new event loop
         background_loop = asyncio.new_event_loop()
-        
         # Start the background loop in a separate thread
         background_thread = threading.Thread(
-            target=run_background_loop, 
-            args=(background_loop,), 
+            target=run_background_loop,
+            args=(background_loop,),
             daemon=True
         )
         background_thread.start()
@@ -728,3 +725,4 @@ if __name__ == '__main__':
                 asyncio.run(serve(app, config))
             except:
                 continue
+
