@@ -89,6 +89,7 @@ Modules:
 """
 
 from flask import Flask, render_template, jsonify, request
+import struct
 import subprocess
 import threading
 import time
@@ -101,16 +102,23 @@ import os
 import signal
 from datetime import datetime
 import sys
+from pathlib import Path
 
+home_usr = Path.home()
+path_usr_log = "{}/TrachHub/trachhub.log".format(home_usr)
+
+
+print(path_usr_log)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('/var/log/trachhub.log') if platform.system() != "Windows" else logging.FileHandler('trachhub.log'),
+        logging.FileHandler(path_usr_log) if platform.system() != "Windows" else logging.FileHandler(path_usr_log),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
+background_loop = None
 
 app = Flask(__name__)
 
@@ -177,12 +185,26 @@ class BluetoothManager:
                 device_state['bluetooth_connected'] = True
                 device_state['last_bluetooth_connection'] = datetime.now().isoformat()
                 logger.info(f"Connected to device: {address}")
-                
+
+                # Start notification on the characteristic
+                characteristic = "00002a1f-0000-1000-8000-00805f9b34fb"
+                await self.client.start_notify(characteristic, self.notification_handler)
+                logger.info("Started notification on characteristic.")
+
                 asyncio.create_task(self.monitor_connection())
                 return True
             except Exception as e:
                 logger.error(f"Failed to connect: {e}")
                 return False
+
+    def notification_handler(self, sender, data):
+        try:
+            value = struct.unpack('<B', data)[0]
+            logger.info(f"Notification received from TrachSense: {value}")
+            device_state['device_data'] = value
+            self.last_data_time = datetime.now()
+        except Exception as e:
+            logger.error(f"Error in notification handler: {e}")
 
     def handle_disconnect(self, client):
         """
@@ -400,13 +422,12 @@ async def connect_bluetooth_device(address):
         logger.error(f"Error connecting to Bluetooth device: {e}")
         return False
 
-def start_background_tasks():
+def start_background_tasks(loop):
     """
-    Launches a background asynchronous task to continuously monitor system and connection status.
-    Primarily used for Bluetooth connection monitoring. Runs on a loop, checking connection status
-    and logging any errors detected in periodic checks.
+    Launches background asynchronous tasks to continuously monitor system and connection status.
     
-    The monitoring task runs continuously until application termination.
+    Parameters:
+    - `loop` (asyncio.AbstractEventLoop): The event loop to run tasks on
     """
     async def monitor_system():
         while True:
@@ -418,11 +439,21 @@ def start_background_tasks():
                     logger.error(f"Error in monitoring: {e}")
             await asyncio.sleep(1)
 
-    asyncio.create_task(monitor_system())
+    loop.create_task(monitor_system())
 
-if platform.system() != "Windows":
-    # Initialize background tasks when running on a Linux/Raspberry Pi system
-    asyncio.create_task(start_background_tasks())
+def run_background_loop(loop):
+    """
+    Runs the event loop in a separate thread.
+    
+    Parameters:
+    - `loop` (asyncio.AbstractEventLoop): The event loop to run
+    """
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+# if platform.system() != "Windows":
+#     # Initialize background tasks when running on a Linux/Raspberry Pi system
+#     asyncio.create_task(start_background_tasks())
 
 # Routes with async support
 @app.route('/')
@@ -501,7 +532,12 @@ def wifi_connect_route():
 @app.route('/api/bluetooth/connect', methods=['POST'])
 def bluetooth_connect():
     data = request.get_json()
-    success = asyncio.run(connect_bluetooth_device(data['address']))
+    # Schedule the coroutine on the background loop and get the result
+    future = asyncio.run_coroutine_threadsafe(
+        connect_bluetooth_device(data['address']),
+        background_loop
+    )
+    success = future.result()
     return jsonify({'success': success})
 
 @app.route('/api/status')
@@ -541,7 +577,17 @@ def get_data():
             'error': 'Device not connected',
             'last_connection': device_state.get('last_bluetooth_connection')
         })
-    return jsonify({'data': []})  # gotta replace this with TrachSense's actual data collection
+    
+    # Return the last value received via notification
+    value = device_state.get('device_data')
+    if value is not None:
+        return jsonify({'data': [value]})
+    else:
+        return jsonify({
+            'data': [],
+            'error': 'No data received yet',
+            'last_connection': device_state.get('last_bluetooth_connection')
+        })
 
 def get_current_wifi():
     """
@@ -627,6 +673,20 @@ start_time = time.time()
 
 if __name__ == '__main__':
     try:
+        # Create a new event loop
+        background_loop = asyncio.new_event_loop()
+        # Start the background loop in a separate thread
+        background_thread = threading.Thread(
+            target=run_background_loop,
+            args=(background_loop,),
+            daemon=True
+        )
+        background_thread.start()
+
+        # Start background tasks on this loop
+        start_background_tasks(background_loop)
+
+
         cli = sys.modules['flask.cli']
         cli.show_server_banner = lambda *x: None
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -665,3 +725,4 @@ if __name__ == '__main__':
                 asyncio.run(serve(app, config))
             except:
                 continue
+
