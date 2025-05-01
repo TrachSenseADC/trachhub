@@ -1,80 +1,73 @@
 #!/bin/bash
 set -eo pipefail
 
-
-
-# friendly configuration for trachub installation
+# Friendly configuration for TrachHub installation
 INSTALL_DIR="$HOME/TrachHub"
 SCRIPTS_SOURCE="https://github.com/TrachSenseADC/trachhub.git"
 LOG_FILE="$INSTALL_DIR/setup.log"
 
-# handle unexpected errors by cleaning up and logging
+# Handle unexpected errors by cleaning up and logging
 cleanup() {
-  echo -e "\n❌ something went wrong. check $LOG_FILE or contact support."
+  echo -e "\n❌ Something went wrong. Check $LOG_FILE or contact support."
   exit 1
 }
 trap cleanup ERR
 
-# display welcome message and setup instructions
-echo "welcome to trachub setup!"
-echo "this will take 2-3 minutes. please don't turn off your device."
+# Display welcome message and setup instructions
+echo "Welcome to TrachHub setup!"
+echo "This will take 2-3 minutes. Please don't turn off your device."
 echo "--------------------------------------------------------------"
 
-# redirect all output (stdout and stderr) to both console and log file
-exec > >(tee "$LOG_FILE") 2>&1 # *1
+# Redirect all output (stdout and stderr) to both console and log file
+exec > >(tee "$LOG_FILE") 2>&1
 
-# verify internet connectivity before proceeding
-echo -e "\nstep 1/6: checking internet connection..."
+# Verify internet connectivity before proceeding
+echo -e "\nStep 1/7: Checking internet connection..."
 if ! ping -c 1 google.com &> /dev/null; then
-  echo -e "\n❌ no internet. please connect to wi-fi and try again."
+  echo -e "\n❌ No internet. Please connect to Wi-Fi and try again."
   exit 1
 fi
 
-# create necessary directories for the installation
-echo -e "\nstep 2/6: setting up folders..."
-mkdir -p "$INSTALL_DIR" || { echo "could not create installation directory. check permissions."; exit 1; }
+# Create necessary directories for the installation
+echo -e "\nStep 2/7: Setting up folders..."
+mkdir -p "$INSTALL_DIR" || { echo "Could not create installation directory. Check permissions."; exit 1; }
 
-# install system dependencies and tools required for trachub
-echo -e "\nstep 3/6: installing required system tools..."
-sudo apt-get update -qq # *1
-sudo apt-get install -y -qq python3 python3-pip git # *1
+# Install system dependencies and tools required for TrachHub
+echo -e "\nStep 3/7: Installing required system tools..."
+sudo apt-get update -qq
+sudo apt-get install -y -qq python3 python3-pip git
 
+# Install PostgreSQL 13 and build TimescaleDB from source
+echo -e "\nStep 4/7: Installing PostgreSQL 13 and TimescaleDB..."
+# Install PostgreSQL 13 and development libraries
+sudo apt-get install -y -qq postgresql-13 postgresql-server-dev-13 postgresql-client-13
 
-# install PostgreSQL and TimescaleDB
-echo -e "\nStep 4/7: Installing PostgreSQL and TimescaleDB..."
-# Run PostgreSQL setup script
-sudo apt install gnupg postgresql-common apt-transport-https lsb-release wget
-sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+# Install dependencies for building TimescaleDB
+sudo apt-get install -y -qq build-essential cmake git libssl-dev
 
-# Install PostgreSQL development libraries
-sudo apt-get install -y postgresql-server-dev-17
+# Clone and build TimescaleDB 2.15.1
+echo -e "\nBuilding TimescaleDB from source..."
+cd /tmp
+git clone https://github.com/timescale/timescaledb.git
+cd timescaledb
+git checkout 2.15.1
+./bootstrap -DAPACHE_ONLY=0 -DPG_CONFIG=/usr/lib/postgresql/13/bin/pg_config
+cd build && make
+sudo make install
 
-# Add TimescaleDB repository
-echo "deb https://packagecloud.io/timescale/timescaledb/$(lsb_release -is | tr '[:upper:]' '[:lower:]')/ $(lsb_release -cs) main" | \
-  sudo tee /etc/apt/sources.list.d/timescaledb.list
-
-# Install TimescaleDB GPG key
-if [ "$(lsb_release -rs)" \> "21.10" ]; then
-  wget --quiet -O - https://packagecloud.io/timescale/timescaledb/gpgkey | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/timescaledb.gpg
-else
-  wget --quiet -O - https://packagecloud.io/timescale/timescaledb/gpgkey | sudo apt-key add -
+# Configure PostgreSQL for TimescaleDB
+echo -e "\nConfiguring PostgreSQL for TimescaleDB..."
+POSTGRES_CONF="/etc/postgresql/13/main/postgresql.conf"
+if ! grep -q "shared_preload_libraries.*timescaledb" "$POSTGRES_CONF"; then
+  sudo sed -i "/#shared_preload_libraries/s/#\(shared_preload_libraries = '\)/\1timescaledb,/" "$POSTGRES_CONF" || \
+  echo "shared_preload_libraries = 'timescaledb'" | sudo tee -a "$POSTGRES_CONF"
 fi
 
-# Update repository list
-sudo apt update -qq
-
-# Install TimescaleDB
-sudo apt install -y timescaledb-2-postgresql-17 postgresql-client-17
-
-# Tune PostgreSQL for TimescaleDB
-echo -e "\nTuning PostgreSQL for TimescaleDB..."
-sudo timescaledb-tune --quiet --yes
-
-# Restart PostgreSQL
+# Restart PostgreSQL to apply changes
 sudo systemctl restart postgresql
 
-# Configure PostgreSQL password (non-interactive)
-echo -e "\nConfiguring PostgreSQL user..."
+# Configure PostgreSQL user and database
+echo -e "\nSetting up PostgreSQL user and database..."
 if sudo -u postgres psql -t -c "SELECT 1 FROM pg_roles WHERE rolname='trachuser'" | grep -q 1; then
   echo "Database user already exists, skipping creation"
 else
@@ -84,27 +77,31 @@ else
   sudo -u postgres psql -d trachdb -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
 fi
 
+# Verify TimescaleDB installation
+echo -e "\nVerifying TimescaleDB installation..."
+sudo -u postgres psql -d trachdb -c "\dx" | grep -q timescaledb && echo "TimescaleDB extension successfully enabled" || \
+  { echo "Failed to enable TimescaleDB extension"; exit 1; }
 
-# download or update trachub scripts from the remote repository
-echo -e "\n⬇step 4/6: downloading trachub scripts..."
+# Download or update TrachHub scripts from the remote repository
+echo -e "\n⬇ Step 5/7: Downloading TrachHub scripts..."
 if [ -d "$INSTALL_DIR/scripts/.git" ]; then
   git -C "$INSTALL_DIR/scripts" pull origin setup --quiet
 else
   git clone --quiet -b setup "$SCRIPTS_SOURCE" "$INSTALL_DIR/scripts"
 fi
 
-# prepare python virtual environment and install dependencies
-echo -e "\nstep 5/6: preparing python environment..."
-python3 -m venv "$INSTALL_DIR/venv" || { echo "failed to create python virtual environment. see log."; exit 1; }
+# Prepare Python virtual environment and install dependencies
+echo -e "\nStep 6/7: Preparing Python environment..."
+python3 -m venv "$INSTALL_DIR/venv" || { echo "Failed to create Python virtual environment. See log."; exit 1; }
 source "$INSTALL_DIR/venv/bin/activate"
 response=$(curl -s https://raw.githubusercontent.com/TrachSenseADC/trachhub/refs/heads/setup/requirements.txt -o requirements.txt)
 python3 -m pip install --no-cache-dir -r requirements.txt
 
-# launch trachub server in the background
-echo -e "\n🚀 step 6/6: starting trachub server..."
+# Launch TrachHub server in the background
+echo -e "\n🚀 Step 7/7: Starting TrachHub server..."
 cd "$INSTALL_DIR/scripts"
-python3 app.py & # (moh's script, connects board to hub) start server script for bluetooth connection and data streaming
+python3 app.py &
 
-echo -e "\n✅ setup complete! trachub is now running."
+echo -e "\n✅ Setup complete! TrachHub is now running."
 echo "--------------------------------------------------------------"
-echo "to stop trachub, restart your device or contact support."
+echo "To stop TrachHub, restart your device or contact support."
