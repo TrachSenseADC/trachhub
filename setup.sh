@@ -102,11 +102,6 @@ echo -e "\n🚀 Step 7/7: Starting TrachHub server..."
 cd "$INSTALL_DIR/scripts"
 python3 app.py &
 
-sleep 2
-
-# Open the TrachHub server in the default web browser
-echo -e "\nOpening TrachHub at http://localhost:5000..."
-xdg-open http://localhost:5000 &> /dev/null &
 
 echo -e "\n✅ Setup complete! TrachHub is now running."
 echo "--------------------------------------------------------------"
