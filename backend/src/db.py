@@ -50,22 +50,12 @@ class Database:
             conn = self.get_connection()
             cur = conn.cursor()
 
-            cur.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id SERIAL PRIMARY KEY,
-                username TEXT UNIQUE NOT NULL,
-                created_at TIMESTAMPTZ DEFAULT NOW()
-            );
-            """)
 
             cur.execute("""
             CREATE TABLE IF NOT EXISTS sensor_data (
                 timestamp TIMESTAMPTZ NOT NULL,
-                user_id INTEGER NOT NULL,
-                sensor_id TEXT NOT NULL,
                 value FLOAT,
                 pattern TEXT,
-                FOREIGN KEY (user_id) REFERENCES users(user_id)
             );
             """)
 
@@ -82,7 +72,7 @@ class Database:
 
             cur.execute("""
             CREATE INDEX IF NOT EXISTS idx_sensor_data_user_time 
-            ON sensor_data (user_id, timestamp DESC);
+            ON sensor_data (timestamp DESC);
             """)
 
             cur.execute("""
@@ -90,12 +80,10 @@ class Database:
             WITH (timescaledb.continuous_aggregate='true')
             AS SELECT
                 time_bucket('1 hour', timestamp) as bucket,
-                user_id,
-                sensor_id,
                 AVG(value) as avg_value,
                 COUNT(*) as reading_count
             FROM sensor_data
-            GROUP BY bucket, user_id, sensor_id;
+            GROUP BY bucket;
             """)
 
 
@@ -110,7 +98,6 @@ class Database:
             cur.execute("""
             ALTER TABLE sensor_data SET (
                 timescaledb.compress,
-                timescaledb.compress_segmentby = 'user_id,sensor_id',
                 timescaledb.compress_orderby = 'timestamp DESC'
             );
             """)
@@ -133,7 +120,7 @@ class Database:
             if conn:
                 self.release_connection(conn)
 
-    def batch_store_data(self, user_id: int, data_points: List[Dict[str, Any]], batch_size: int = 1000):
+    def batch_store_data(self, data_points: List[Dict[str, Any]], batch_size: int = 1000):
         """Store multiple data points"""
         conn = None
         cur = None
@@ -144,8 +131,6 @@ class Database:
             # Prepare data for batch insert
             values = [(
                 point.get('timestamp', datetime.now()),
-                user_id,
-                point.get('sensor_id', '0000'),
                 point.get('value'),
                 point.get('pattern')
             ) for point in data_points]
@@ -155,7 +140,7 @@ class Database:
                 cur,
                 """
                 INSERT INTO sensor_data 
-                (timestamp, user_id, sensor_id, value, pattern)
+                (timestamp, value, pattern)
                 VALUES %s
                 """,
                 values,
@@ -171,7 +156,7 @@ class Database:
             if conn:
                 self.release_connection(conn)
 
-    def get_recent_data(self, user_id: int, hours: int = 24):
+    def get_recent_data(self, hours: int = 24):
         """Retrieve recent data for a user"""
         conn = None
         cur = None
@@ -180,12 +165,11 @@ class Database:
             cur = conn.cursor()
 
             cur.execute("""
-            SELECT timestamp, sensor_id, value, pattern
+            SELECT timestamp, value, pattern
             FROM sensor_data
-            WHERE user_id = %s
-              AND timestamp > NOW() - INTERVAL '%s hours'
+            WHERE timestamp > NOW() - INTERVAL '%s hours'
             ORDER BY timestamp DESC
-            """, (user_id, hours))
+            """, (hours,))
 
             return cur.fetchall()
         except psycopg2.Error as e:
