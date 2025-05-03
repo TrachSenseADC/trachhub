@@ -23,8 +23,3 @@ yarn-debug.log*
 yarn-error.log*
 
 venv
-
-*.pyc
-__pycache__/
-
-.env
