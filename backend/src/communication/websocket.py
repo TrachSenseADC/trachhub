@@ -3,10 +3,14 @@ import websockets
 import json
 import os
 from dotenv import load_dotenv
-from ..db import Database
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.abspath(__file__), "../../../../")))
+
+from backend.src.db import Database
 import time
-from ..data_processing.analyzer import BreathingPatternAnalyzer
-from ....app import device_state, bluetooth_manager
+from backend.src.data_processing.analyzer import BreathingPatternAnalyzer
+from app import device_state, bluetooth_manager
 
 excel_file = '../data/decann.xlsx'
 
