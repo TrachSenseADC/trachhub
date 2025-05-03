@@ -105,8 +105,7 @@ import sys
 from pathlib import Path
 
 home_usr = Path.home()
-path_usr_log = "{}/TrachHub/trachhub.log".format(home_usr)
-
+path_usr_log = os.path.join(home_usr, 'trachhub.log')
 
 print(path_usr_log)
 logging.basicConfig(
