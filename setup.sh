@@ -42,33 +42,52 @@ sudo apt-get install -y -qq python3 python3-pip git # *1
 
 # install PostgreSQL and TimescaleDB
 echo -e "\nStep 4/7: Installing PostgreSQL and TimescaleDB..."
-# Run PostgreSQL setup script
-sudo apt install gnupg postgresql-common apt-transport-https lsb-release wget
-sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
 
-# Install PostgreSQL development libraries
-sudo apt-get install -y postgresql-server-dev-17
+# Install PostgreSQL
+sudo apt install -y postgresql postgresql-contrib
 
-# Add TimescaleDB repository
-echo "deb https://packagecloud.io/timescale/timescaledb/$(lsb_release -is | tr '[:upper:]' '[:lower:]')/ $(lsb_release -cs) main" | \
-  sudo tee /etc/apt/sources.list.d/timescaledb.list
+# Install build dependencies
+sudo apt install -y \
+    build-essential \
+    cmake \
+    libssl-dev \
+    libpq-dev \
+    postgresql-server-dev-all
 
-# Install TimescaleDB GPG key
-if [ "$(lsb_release -rs)" \> "21.10" ]; then
-  wget --quiet -O - https://packagecloud.io/timescale/timescaledb/gpgkey | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/timescaledb.gpg
-else
-  wget --quiet -O - https://packagecloud.io/timescale/timescaledb/gpgkey | sudo apt-key add -
-fi
+# Build TimescaleDB from source
+TS_VERSION="2.19.3"
+git clone https://github.com/timescale/timescaledb.git
+cd timescaledb
+git checkout $TS_VERSION
+./bootstrap
+cd build && make
+sudo make install
+cd ~
 
-# Update repository list
-sudo apt update -qq
+# Configure PostgreSQL
+echo -e "\nConfiguring PostgreSQL port and settings..."
+sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /etc/postgresql/*/main/postgresql.conf
+sudo sed -i "s/#port = 5432/port = 5432/" /etc/postgresql/*/main/postgresql.conf  # Change 5432 to your desired port
+sudo sed -i "s/#shared_preload_libraries = ''/shared_preload_libraries = 'timescaledb'/" /etc/postgresql/*/main/postgresql.conf
 
-# Install TimescaleDB
-sudo apt install -y timescaledb-2-postgresql-17 postgresql-client-17
+# Raspberry Pi-specific optimizations
+echo "
+# Raspberry Pi optimizations
+random_page_cost = 1.1
+effective_io_concurrency = 2
+max_worker_processes = 2
+max_parallel_workers_per_gather = 1
+timescaledb.max_background_workers = 2
+" | sudo tee -a /etc/postgresql/*/main/postgresql.conf
 
-# Tune PostgreSQL for TimescaleDB
-echo -e "\nTuning PostgreSQL for TimescaleDB..."
-sudo timescaledb-tune --quiet --yes
+# Update pg_hba.conf to allow connections
+echo "
+# Allow connections from all IPs, might have to adjust this later for security
+host all all 0.0.0.0/0 md5
+" | sudo tee -a /etc/postgresql/*/main/pg_hba.conf
+
+# Restart PostgreSQL
+sudo service postgresql restart
 
 # Restart PostgreSQL
 sudo systemctl restart postgresql
@@ -83,7 +102,6 @@ else
   sudo -u postgres psql -c "CREATE DATABASE trachdb OWNER trachuser;"
   sudo -u postgres psql -d trachdb -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
 fi
-
 
 # download or update trachub scripts from the remote repository
 echo -e "\n⬇step 4/6: downloading trachub scripts..."
