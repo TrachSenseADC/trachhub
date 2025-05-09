@@ -19,11 +19,11 @@ class WebSocket:
     def __init__(self):
         self.connected_clients = set()
         self.run = True
-        self.db = Database()
+        # self.db = Database()
         self.ws_host = os.getenv('WS_HOST', 'localhost')
         self.ws_port = int(os.getenv('WS_PORT', '8765'))
-        self.db.setup_database()
-        self.db.create_pool()
+        # self.db.setup_database()
+        # self.db.create_pool()
         self.broadcast_lock = asyncio.Lock()
         self.data_buffer = []
         self.buffer_size = 100  
@@ -120,7 +120,7 @@ class WebSocket:
                         } for item in self.data_buffer]
                         
                         await self.send_data(processed_batch)
-                        await self.db_store_data(processed_batch)
+                        # await self.db_store_data(processed_batch)
                         
                         print(f"Processed batch of {len(processed_batch)} sensor readings")
                         self.data_buffer = []
@@ -151,7 +151,7 @@ class WebSocket:
 
     async def start_server(self):
         """Start the WebSocket server"""
-        self.db.setup_database()
+        # self.db.setup_database()
         
         async with websockets.serve(
             self.handle_client,
@@ -165,7 +165,7 @@ class WebSocket:
                 await asyncio.Future()  
             except asyncio.CancelledError:
                 self.stop()
-                self.db.close_pool()
+                # self.db.close_pool()
         
     def stop(self):
         """Stop the server and cleanup"""
