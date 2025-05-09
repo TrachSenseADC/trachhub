@@ -4,30 +4,27 @@ import json
 import os
 from dotenv import load_dotenv
 import sys
+import time
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.abspath(__file__), "../../../../")))
 
 from backend.src.db import Database
-import time
 from backend.src.data_processing.analyzer import BreathingPatternAnalyzer
 from app import device_state, bluetooth_manager
 
-excel_file = '../data/decann.xlsx'
-
 load_dotenv()
+
 class WebSocket:
     def __init__(self):
         self.connected_clients = set()
         self.run = True
-        # self.db = Database()
         self.ws_host = os.getenv('WS_HOST', 'localhost')
         self.ws_port = int(os.getenv('WS_PORT', '8765'))
-        # self.db.setup_database()
-        # self.db.create_pool()
-        self.broadcast_lock = asyncio.Lock()
+        # Database setup moved to async init
+        self.broadcast_lock = None  # Will be initialized in start_server
         self.data_buffer = []
-        self.buffer_size = 100  
-        self.client_connected = asyncio.Event()
+        self.buffer_size = 100
+        self.client_connected = None  # Will be initialized in start_server
         self.last_sensor_value = None
         self.last_processed_time = 0
 
@@ -57,7 +54,7 @@ class WebSocket:
                 self.client_connected.clear()
 
     async def send_data(self, data: dict):
-        """Send data to all connected WebSocket clients and handle disconnected clients by removing them from self.connected_servers"""
+        """Send data to all connected WebSocket clients"""
         if not self.connected_clients:
             print("No clients connected")
             return
@@ -70,21 +67,20 @@ class WebSocket:
                 "pattern": value["pattern"]
             }) for value in data]
 
-            send_tasks = []
-            for client in list(self.connected_clients):
+            clients_to_remove = set()
+            for client in self.connected_clients:
                 for message in messages:
-                    print('Message:', message)
                     try:
-                        task = asyncio.create_task(client.send(message))
-                        send_tasks.append(task)
-                        print(f"Data queued for client: {client.remote_address}")
+                        await client.send(message)
+                        print(f"Data sent to client: {client.remote_address}")
                     except Exception as e:
-                        print(f"Error queuing data for client {client.remote_address}: {e}")
-                        self.connected_clients.discard(client)
+                        print(f"Error sending data to client {client.remote_address}: {e}")
+                        clients_to_remove.add(client)
                         break
-
-            if send_tasks:
-                await asyncio.gather(*send_tasks, return_exceptions=True)
+            
+            # Remove disconnected clients after iteration
+            for client in clients_to_remove:
+                self.connected_clients.discard(client)
 
     async def process_data(self):
         """Main data processing loop that reads from Bluetooth sensor"""
@@ -108,7 +104,6 @@ class WebSocket:
                     })
                     
                     if len(self.data_buffer) >= self.buffer_size:
-
                         values = [item["value"] for item in self.data_buffer]
                         analyzer.update_data(values)
                         pattern = analyzer.detect_pattern()
@@ -120,7 +115,7 @@ class WebSocket:
                         } for item in self.data_buffer]
                         
                         await self.send_data(processed_batch)
-                        # await self.db_store_data(processed_batch)
+                        # Database storage would go here if needed
                         
                         print(f"Processed batch of {len(processed_batch)} sensor readings")
                         self.data_buffer = []
@@ -134,24 +129,31 @@ class WebSocket:
                 else:
                     await asyncio.sleep(0.1)
                     
+            except asyncio.CancelledError:
+                # Re-raise to allow proper task cancellation
+                raise
             except Exception as e:
                 print(f"Error in sensor data processing: {e}")
-                await asyncio.sleep(1) 
-    async def db_store_data(self, chunk):
-        # Wrap the synchronous database operation in an async function
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self.db.batch_store_data, chunk)
+                await asyncio.sleep(1)
 
-    async def process_queue(self):
-        """Go through the data queue and use send_data to send it to all connected servers"""
-        while self.run:
-            for data in self.data_queue:
-                self.send_data(data)
-        
+    async def db_store_data(self, chunk):
+        """Store data in the database asynchronously"""
+        loop = asyncio.get_running_loop()  # Get the current running loop
+        await loop.run_in_executor(None, self.db.batch_store_data, chunk)
 
     async def start_server(self):
         """Start the WebSocket server"""
-        # self.db.setup_database()
+        # Initialize asyncio primitives inside the event loop
+        self.broadcast_lock = asyncio.Lock()
+        self.client_connected = asyncio.Event()
+        
+        # Initialize database if needed
+        # self.db = Database()
+        # await loop.run_in_executor(None, self.db.setup_database)
+        # await loop.run_in_executor(None, self.db.create_pool)
+        
+        # Create and store the process_data task to properly handle cancellation
+        process_task = asyncio.create_task(self.process_data())
         
         async with websockets.serve(
             self.handle_client,
@@ -159,25 +161,37 @@ class WebSocket:
             self.ws_port
         ):
             print(f"Server started on {self.ws_host}:{self.ws_port}")
-            await asyncio.create_task(self.process_data())
             
             try:
-                await asyncio.Future()  
+                await asyncio.Future()  # Run forever
             except asyncio.CancelledError:
+                print("Server is being cancelled...")
+                # Cancel our process_data task
+                process_task.cancel()
+                try:
+                    await process_task  # Wait for cancellation to complete
+                except asyncio.CancelledError:
+                    pass  # Expected during shutdown
+                
                 self.stop()
-                # self.db.close_pool()
+                # Database cleanup would go here
+                # await loop.run_in_executor(None, self.db.close_pool)
+                raise  # Re-raise the CancelledError
         
     def stop(self):
         """Stop the server and cleanup"""
         print("Shutting down server...")
         self.run = False
 
-if __name__ == "__main__":
+async def main():
+    """Main entry point for the WebSocket server"""
     server = WebSocket()
+    await server.start_server()
+
+if __name__ == "__main__":
     try:
-        asyncio.run(server.start_server())
+        asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nShutting down...")
-        
-    finally:
-        server.stop()
+        print("\nShutting down due to keyboard interrupt...")
+    except Exception as e:
+        print(f"Error in main loop: {e}")
