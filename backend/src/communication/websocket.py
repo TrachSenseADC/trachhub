@@ -93,7 +93,7 @@ class WebSocket:
         while self.run:
             try:
                 current_value = device_state.get('device_data')
-                
+                print('current value', current_value)
                 if current_value is not None and current_value != self.last_sensor_value:
                     timestamp = time.time()
                     self.last_sensor_value = current_value
