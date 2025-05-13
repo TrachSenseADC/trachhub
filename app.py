@@ -775,7 +775,7 @@ async def run_servers():
     flask_task = asyncio.create_task(serve(app, config))
     
     # Also run the background monitoring
-    await start_background_tasks(asyncio.get_event_loop())
+    start_background_tasks(asyncio.get_event_loop())
     
     # Wait for both servers to run (they won't complete normally)
     await asyncio.gather(ws_task, flask_task)
