@@ -202,7 +202,7 @@ class BluetoothManager:
             logger.info(f"Notification received from TrachSense: {value}")
             device_state['device_data'] = value
             self.last_data_time = datetime.now()
-            websocket_server.broadcast_data(value)
+            asyncio.create_task(websocket_server.broadcast_data(value))
         except Exception as e:
             logger.error(f"Error in notification handler: {e}")
 
@@ -311,9 +311,7 @@ class WebSocketServer:
 
     async def broadcast_data(self, data):
         """Broadcast data to all connected WebSocket clients"""
-        if not self.connected_clients:
-            return
-
+        
         message = json.dumps({
             "type": "sensor_data",
             "timestamp": datetime.now().isoformat(),
@@ -322,6 +320,11 @@ class WebSocketServer:
         })
 
         logger.info(f"Broadcasting data: {message}")
+
+        if not self.connected_clients:
+            return
+
+       
 
         async with self.broadcast_lock:
             for client in list(self.connected_clients):
