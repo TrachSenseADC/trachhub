@@ -764,6 +764,10 @@ from hypercorn.config import Config
 
 start_time = time.time()
 async def run_servers():
+
+    loop = asyncio.get_event_loop()
+    global background_loop
+    background_loop = loop
     # Create a task for the WebSocket server
     ws_task = asyncio.create_task(websocket_server.start())
     
