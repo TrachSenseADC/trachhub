@@ -311,7 +311,7 @@ class WebSocketServer:
 
     async def broadcast_data(self, data):
         """Broadcast data to all connected WebSocket clients"""
-        
+
         message = json.dumps({
             "type": "sensor_data",
             "timestamp": datetime.now().isoformat(),
@@ -324,8 +324,6 @@ class WebSocketServer:
         if not self.connected_clients:
             return
 
-       
-
         async with self.broadcast_lock:
             for client in list(self.connected_clients):
                 try:
@@ -333,7 +331,7 @@ class WebSocketServer:
                 except:
                     self.connected_clients.remove(client)
 
-    async def start(self, host='0.0.0.0', port=8765):
+    async def start(self, host='localhost', port=8765):
         """Start the WebSocket server"""
         self.server = await websockets.serve(
             self.handler,
