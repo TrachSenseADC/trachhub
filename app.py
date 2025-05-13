@@ -202,7 +202,7 @@ class BluetoothManager:
             logger.info(f"Notification received from TrachSense: {value}")
             device_state['device_data'] = value
             self.last_data_time = datetime.now()
-            asyncio.create_task(websocket_server.broadcast_data(value))
+            websocket_server.broadcast_data(value)
         except Exception as e:
             logger.error(f"Error in notification handler: {e}")
 
