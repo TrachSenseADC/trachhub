@@ -321,7 +321,7 @@ class WebSocketServer:
             "bluetooth_connected": bluetooth_manager.is_connected
         })
 
-        print(f"Broadcasting data: {message}")
+        logger.info(f"Broadcasting data: {message}")
 
         async with self.broadcast_lock:
             for client in list(self.connected_clients):
