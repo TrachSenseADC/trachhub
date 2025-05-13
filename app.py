@@ -283,7 +283,7 @@ class WebSocketServer:
         self.broadcast_lock = asyncio.Lock()
         self.client_connected = asyncio.Event()
 
-    async def handler(self, websocket):
+    async def handler(self, websocket, path):
         """Handle new WebSocket connections"""
         client_address = websocket.remote_address[0]
         logger.info(f"New WebSocket client connected: {client_address}")
@@ -334,7 +334,7 @@ class WebSocketServer:
     async def start(self, host='localhost', port=8765):
         """Start the WebSocket server"""
         self.server = await websockets.serve(
-            self.handler(websocket_server),
+            self.handler,
             host,
             port
         )
