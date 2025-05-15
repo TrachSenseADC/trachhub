@@ -104,6 +104,7 @@ from datetime import datetime
 import sys
 from pathlib import Path
 
+
 home_usr = Path.home()
 path_usr_log = os.path.join(home_usr, 'trachhub.log')
 
@@ -195,14 +196,13 @@ class BluetoothManager:
             except Exception as e:
                 logger.error(f"Failed to connect: {e}")
                 return False
-    
+
     def notification_handler(self, sender, data):
         try:
             value = struct.unpack('<B', data)[0]
-            # logger.info(f"Notification received from TrachSense: {value}")
+            logger.info(f"Notification received from TrachSense: {value}")
             device_state['device_data'] = value
             self.last_data_time = datetime.now()
-            asyncio.create_task(websocket_server.broadcast_data(value))
         except Exception as e:
             logger.error(f"Error in notification handler: {e}")
 
@@ -255,100 +255,6 @@ class BluetoothManager:
             await asyncio.sleep(5)
 
 bluetooth_manager = BluetoothManager()
-
-import asyncio
-import websockets
-import json
-import os
-from dotenv import load_dotenv
-import sys
-import time
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.abspath(__file__), "../../../../")))
-
-from backend.src.db import Database
-from backend.src.data_processing.analyzer import BreathingPatternAnalyzer
-from app import device_state, bluetooth_manager
-
-load_dotenv()
-import websockets
-from functools import partial
-
-# Add this class definition somewhere before your Flask routes
-class WebSocketServer:
-    def __init__(self):
-        self.connected_clients = set()
-        self.loop = asyncio.get_event_loop()
-        self.server = None
-        self.broadcast_lock = asyncio.Lock()
-        self.client_connected = asyncio.Event()
-
-    async def handler(self, websocket, path):
-        """Handle new WebSocket connections"""
-        client_address = websocket.remote_address[0]
-        logger.info(f"New WebSocket client connected: {client_address}")
-        
-        if not self.connected_clients:
-            self.client_connected.set()
-        self.connected_clients.add(websocket)
-        
-        try:
-            await websocket.send(json.dumps({
-                "type": "connection_status",
-                "status": "connected",
-                "message": "Connected to TrachHub data stream"
-            }))
-            
-            async for message in websocket:
-                logger.debug(f"Received message from {client_address}: {message}")
-                
-        except websockets.exceptions.ConnectionClosed:
-            logger.info(f"WebSocket client disconnected: {client_address}")
-        finally:
-            self.connected_clients.remove(websocket)
-            if not self.connected_clients:
-                self.client_connected.clear()
-
-    async def broadcast_data(self, data):
-        """Broadcast data to all connected WebSocket clients"""
-
-        message = json.dumps({
-            "type": "sensor_data",
-            "timestamp": datetime.now().isoformat(),
-            "data": data,
-            "bluetooth_connected": bluetooth_manager.is_connected
-        })
-
-        # logger.info(f"Broadcasting data: {message}")
-
-        if not self.connected_clients:
-            return
-
-        async with self.broadcast_lock:
-            for client in list(self.connected_clients):
-                try:
-                    await client.send(message)
-                except:
-                    self.connected_clients.remove(client)
-
-    async def start(self, host='localhost', port=8765):
-        """Start the WebSocket server"""
-        self.server = await websockets.serve(
-            self.handler,
-            host,
-            port
-        )
-        logger.info(f"WebSocket server started on ws://{host}:{port}")
-
-    async def stop(self):
-        """Stop the WebSocket server"""
-        if self.server:
-            self.server.close()
-            await self.server.wait_closed()
-            logger.info("WebSocket server stopped")
-
-# Create an instance of the WebSocket server
-websocket_server = WebSocketServer()
 
 def get_wifi_networks():
     """
@@ -762,64 +668,54 @@ def health_check():
         },
         'uptime': time.time() - start_time
     })
-from hypercorn.asyncio import serve
-from hypercorn.config import Config
 
 start_time = time.time()
-async def run_servers():
+
+from backend.src.communication.websocket import WebSocket
+from hypercorn.config import Config
+from hypercorn.asyncio import serve
+
+async def run_all():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 1))
+        local_ip = s.getsockname()[0]
+    finally:
+        s.close()
+
+    ws = WebSocket(host="0.0.0.0", port=8765)
+    task_ws = asyncio.create_task(ws.start())
 
     loop = asyncio.get_event_loop()
-    global background_loop
-    background_loop = loop
-    # Create a task for the WebSocket server
-    ws_task = asyncio.create_task(websocket_server.start())
-    
-    # Configure and run Hypercorn (Flask) server
+    start_background_tasks(loop)
+
     config = Config()
     config.bind = [f"{local_ip}:5000"]
-    config.worker_class = 'asyncio'
-    
-    flask_task = asyncio.create_task(serve(app, config))
-    
-    # Also run the background monitoring
-    start_background_tasks(asyncio.get_event_loop())
-    
-    # Wait for both servers to run (they won't complete normally)
-    await asyncio.gather(ws_task, flask_task)
+    config.worker_class = "asyncio"
+    config.errorlog  = logging.getLogger("hypercorn.error")
+    config.accesslog = logging.getLogger("hypercorn.access")
+
+    task_http = asyncio.create_task(serve(app, config))
+
+    logger.info(f"TrachHub HTTP server ▶ http://{local_ip}:5000")
+    logger.info(f"TrachHub WS server  ▶ ws://{local_ip}:8765")
+
+    # 5) Run forever (or until cancelled)
+    await asyncio.gather(task_ws, task_http)
+
 
 if __name__ == '__main__':
-    try:
-        # Get local IP
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(('8.8.8.8', 1))
-        local_ip = s.getsockname()[0]
-        s.close()
+    cli = sys.modules['flask.cli']
+    if cli:
+        cli.show_server_banner = lambda *x: None
+    
+    if platform.system() != "Windows":
+        try:
+            subprocess.run(['sudo', 'setterm', '-blank', '5', '-powerdown', '5'])
+            subprocess.run(['sudo', 'systemctl', 'disable', 'apt-daily.service'])
+            subprocess.run(['sudo', 'systemctl', 'disable', 'apt-daily.timer'])
+        except Exception as e:
+            logger.warning(f"Failed to configure system settings: {e}")
+                
+    asyncio.run_all()
         
-        if platform.system() != "Windows":
-            try:
-                subprocess.run(['sudo', 'setterm', '-blank', '5', '-powerdown', '5'])
-                subprocess.run(['sudo', 'systemctl', 'disable', 'apt-daily.service'])
-                subprocess.run(['sudo', 'systemctl', 'disable', 'apt-daily.timer'])
-            except Exception as e:
-                logger.warning(f"Failed to configure system settings: {e}")
-        
-        print(f"TrachHub Server running at http://{local_ip}:5000")
-        print(f"WebSocket server running at ws://{local_ip}:8765")
-        
-        # Set up logging
-        werkzeug_logger = logging.getLogger('werkzeug')
-        werkzeug_logger.setLevel(logging.ERROR)
-        
-        # Run both servers
-        asyncio.run(run_servers())
-        
-    except Exception as e:
-        logger.error(f"Critical server error: {e}")
-        # Attempt to restart
-        while True:
-            time.sleep(60)
-            logger.info("Server restart attempted...")
-            try:
-                asyncio.run(run_servers())
-            except:
-                continue
