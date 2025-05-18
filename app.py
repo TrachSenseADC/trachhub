@@ -216,7 +216,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.abspath(__file__), "../.
 
 from backend.src.db import Database
 from backend.src.data_processing.analyzer import BreathingPatternAnalyzer
-from app import device_state, bluetooth_manager
+# from app import device_state, bluetooth_manager
 
 load_dotenv()
 import websockets
