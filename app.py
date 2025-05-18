@@ -48,6 +48,8 @@ from pathlib import Path
 home_usr = Path.home()
 path_usr_log = os.path.join(home_usr, 'trachhub.log')
 
+counter = 0
+
 print(path_usr_log)
 logging.basicConfig(
     level=logging.INFO,
@@ -136,14 +138,18 @@ class BluetoothManager:
             except Exception as e:
                 logger.error(f"Failed to connect: {e}")
                 return False
-    
+     
     def notification_handler(self, sender, data):
         try:
             value = struct.unpack('<B', data)[0]
-            logger.info(f"Notification received from TrachSense: {value}")
+            if counter == 200:
+                logger.info(f"Notifications received from TrachSense: {value}")
+                counter = 0
             device_state['device_data'] = value
             self.last_data_time = datetime.now()
+
             asyncio.create_task(websocket_server.broadcast_data(value))
+            logger.info("value brodcasted")
         except Exception as e:
             logger.error(f"Error in notification handler: {e}")
 
