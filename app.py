@@ -46,12 +46,12 @@ from services.ws import WebSocketServer
 from backend.src.data_processing.analyzer import BreathingPatternAnalyzer
 
 BUFFER_SIZE = 1_000
-batch: list[int] = []
+batch = []
 analyzer = BreathingPatternAnalyzer(buffer_size=BUFFER_SIZE, batch_size=BUFFER_SIZE)
 
-in_anomaly: bool = False
-anomaly_start: str | None = None
-anomaly_end: str | None = None
+in_anomaly = False
+anomaly_start = None
+anomaly_end = None
 
 home_usr = Path.home()
 path_usr_log = os.path.join(home_usr, "trachhub.log")
@@ -184,7 +184,7 @@ class BluetoothManager:
                     if in_anomaly:  # anomaly just ended
                         in_anomaly = False
                         anomaly_end = now_iso
-                        
+
                 payload = {
                     "type": "sensor_batch",
                     "timestamp": now_iso,
