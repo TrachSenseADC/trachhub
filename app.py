@@ -167,6 +167,8 @@ class BluetoothManager:
     def notification_handler(self, sender, data):
         """BLE notification → stream out 10-value chunks + anomaly info."""
 
+        global batch_1000, chunk_10
+        global in_anomaly, anomaly_start, anomaly_end, current_state
         try:
             value = struct.unpack("<B", data)[0]
             now_iso = datetime.now(tz=timezone.utc).isoformat()
@@ -200,7 +202,7 @@ class BluetoothManager:
                 # attach anomaly field while episode is active
                 if in_anomaly:
                     payload["anomaly"] = {"start": anomaly_start}
-                    payload['anomaly_type'] = {"type": current_state}
+                    payload['anomaly_type'] = current_state
 
                 if anomaly_end is not None:
                     payload["anomaly"] = {
@@ -212,7 +214,7 @@ class BluetoothManager:
                     anomaly_end = None
 
                 asyncio.get_running_loop().create_task(
-                    websocket_server.broadcast_data(json.dumps(payload))
+                    websocket_server.broadcast_data(payload)
                 )
 
                 chunk_10.clear()  # ready for next 10

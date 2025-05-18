@@ -66,33 +66,29 @@ class WebSocketServer:
                 self.client_connected.clear()
 
     async def broadcast_json(self, obj: dict) -> None:
+        
         await self.broadcast_data(json.dumps(obj))
 
     async def broadcast_data(self, data):
-        """Broadcast data to all connected WebSocket clients"""
+        """Send one JSON message to every connected WebSocket client."""
+        # Encode once, and only once
+        if isinstance(data, (dict, list)):
+            message = json.dumps(data, default=str)
+        else:
+            message = data  # already a JSON string or bytes
 
-        message = json.dumps(
-            {
-                "type": "sensor_data",
-                "timestamp": datetime.now().isoformat(),
-                "data": data,
-                "bluetooth_connected": self.bluetooth_manager.is_connected,
-            }
-        )
-
-        self.logger.info(f"Broadcasting data: {message}")
+        self.logger.info("Broadcasting: %s", message)
 
         if not self.connected_clients:
-            self.logger.info("oopsie")
             return
 
         async with self.broadcast_lock:
-            for client in list(self.connected_clients):
+            for ws in list(self.connected_clients):
                 try:
-                    await client.send(message)
-                    self.logger.info("message sent")
-                except:
-                    self.connected_clients.remove(client)
+                    await ws.send(message)
+                except Exception:
+                    self.connected_clients.discard(ws)
+
 
     async def start(self, host="0.0.0.0", port=8765):
         """Start the WebSocket server"""
