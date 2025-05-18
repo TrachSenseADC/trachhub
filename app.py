@@ -164,116 +164,116 @@ class BluetoothManager:
                 return False
 
 
-def notification_handler(self, sender, data):
-    """BLE notification → stream out 10-value chunks + anomaly info."""
+    def notification_handler(self, sender, data):
+        """BLE notification → stream out 10-value chunks + anomaly info."""
 
-    try:
-        value = struct.unpack("<B", data)[0]
-        now_iso = datetime.now(tz=timezone.utc).isoformat()
+        try:
+            value = struct.unpack("<B", data)[0]
+            now_iso = datetime.now(tz=timezone.utc).isoformat()
 
-        batch_1000.append(value)
-        if len(batch_1000) == BUFFER_ANALYZER:
-            analyzer.update_data(batch_1000)
-            current_state = analyzer.detect_pattern()
-            batch_1000.clear()
+            batch_1000.append(value)
+            if len(batch_1000) == BUFFER_ANALYZER:
+                analyzer.update_data(batch_1000)
+                current_state = analyzer.detect_pattern()
+                batch_1000.clear()
 
-            global in_anomaly, anomaly_start, anomaly_end
-            if current_state != "normal breathing":
-                if not in_anomaly:  # anomaly just started
-                    in_anomaly = True
-                    anomaly_start = now_iso
-                    anomaly_end = None
-            else:  # back to normal
-                if in_anomaly:  # anomaly ends here
-                    in_anomaly = False
-                    anomaly_end = now_iso
+                global in_anomaly, anomaly_start, anomaly_end
+                if current_state != "normal breathing":
+                    if not in_anomaly:  # anomaly just started
+                        in_anomaly = True
+                        anomaly_start = now_iso
+                        anomaly_end = None
+                else:  # back to normal
+                    if in_anomaly:  # anomaly ends here
+                        in_anomaly = False
+                        anomaly_end = now_iso
 
-        chunk_10.append(value)
-        if len(chunk_10) == BUFFER_STREAM:
-            payload = {
-                "type": "sensor_chunk",
-                "timestamp": now_iso,
-                "values": chunk_10.copy(),  # 10 raw readings
-                "bluetooth_connected": bluetooth_manager.is_connected,
-            }
-
-            # attach anomaly field while episode is active
-            if in_anomaly:
-                payload["anomaly"] = {"start": anomaly_start}
-
-            if anomaly_end is not None:
-                payload["anomaly"] = {
-                    "start": anomaly_start,
-                    "end": anomaly_end,
+            chunk_10.append(value)
+            if len(chunk_10) == BUFFER_STREAM:
+                payload = {
+                    "type": "sensor_chunk",
+                    "timestamp": now_iso,
+                    "values": chunk_10.copy(),  # 10 raw readings
+                    "bluetooth_connected": bluetooth_manager.is_connected,
                 }
 
-                anomaly_start = None
-                anomaly_end = None
+                # attach anomaly field while episode is active
+                if in_anomaly:
+                    payload["anomaly"] = {"start": anomaly_start}
 
-            asyncio.get_running_loop().create_task(
-                websocket_server.broadcast_data(json.dumps(payload))
-            )
+                if anomaly_end is not None:
+                    payload["anomaly"] = {
+                        "start": anomaly_start,
+                        "end": anomaly_end,
+                    }
 
-            chunk_10.clear()  # ready for next 10
+                    anomaly_start = None
+                    anomaly_end = None
 
-        device_state["device_data"] = value
-        self.last_data_time = datetime.now()
+                asyncio.get_running_loop().create_task(
+                    websocket_server.broadcast_data(json.dumps(payload))
+                )
 
-    except Exception as e:
-        logger.error(f"Error in notification handler: {e}")
+                chunk_10.clear()  # ready for next 10
 
+            device_state["device_data"] = value
+            self.last_data_time = datetime.now()
 
-def handle_disconnect(self, client):
-    """
-    Callback method triggered on Bluetooth disconnection. Updates the connection
-    status and initiates a reconnection attempt.
-    """
-    logger.warning("Device disconnected, attempting to reconnect...")
-    self.is_connected = False
-    device_state["bluetooth_connected"] = False
-    if not self._lock.locked():
-        asyncio.create_task(self.attempt_reconnect())
-
-
-async def attempt_reconnect(self):
-    """
-    Tries to reconnect to the Bluetooth device. Continues to retry until either
-    the maximum number of attempts is reached or the connection is re-established.
-    """
-    while (
-        not self.is_connected and self.reconnect_attempts < self.max_reconnect_attempts
-    ):
-        try:
-            self.reconnect_attempts += 1
-            device_state["reconnection_attempts"] = self.reconnect_attempts
-            logger.info(f"Reconnection attempt {self.reconnect_attempts}")
-
-            await self.connect(self.device_address)
-            if self.is_connected:
-                logger.info("Successfully reconnected")
-                break
         except Exception as e:
-            logger.error(f"Reconnection failed: {e}")
-            await asyncio.sleep(self.reconnect_delay)
+            logger.error(f"Error in notification handler: {e}")
 
 
-async def monitor_connection(self):
-    """
-    Continuously monitors the Bluetooth connection status. If the connection fails,
-    triggers reconnection logic.
-    """
-    while True:
-        if self.is_connected and self.client:
+    def handle_disconnect(self, client):
+        """
+        Callback method triggered on Bluetooth disconnection. Updates the connection
+        status and initiates a reconnection attempt.
+        """
+        logger.warning("Device disconnected, attempting to reconnect...")
+        self.is_connected = False
+        device_state["bluetooth_connected"] = False
+        if not self._lock.locked():
+            asyncio.create_task(self.attempt_reconnect())
+
+
+    async def attempt_reconnect(self):
+        """
+        Tries to reconnect to the Bluetooth device. Continues to retry until either
+        the maximum number of attempts is reached or the connection is re-established.
+        """
+        while (
+            not self.is_connected and self.reconnect_attempts < self.max_reconnect_attempts
+        ):
             try:
-                # ping the device to check connection
-                services = await self.client.get_services()
-                self.last_data_time = datetime.now()
+                self.reconnect_attempts += 1
+                device_state["reconnection_attempts"] = self.reconnect_attempts
+                logger.info(f"Reconnection attempt {self.reconnect_attempts}")
+
+                await self.connect(self.device_address)
+                if self.is_connected:
+                    logger.info("Successfully reconnected")
+                    break
             except Exception as e:
-                logger.error(f"Connection check failed: {e}")
-                self.is_connected = False
-                device_state["bluetooth_connected"] = False
-                await self.attempt_reconnect()
-        await asyncio.sleep(5)
+                logger.error(f"Reconnection failed: {e}")
+                await asyncio.sleep(self.reconnect_delay)
+
+
+    async def monitor_connection(self):
+        """
+        Continuously monitors the Bluetooth connection status. If the connection fails,
+        triggers reconnection logic.
+        """
+        while True:
+            if self.is_connected and self.client:
+                try:
+                    # ping the device to check connection
+                    services = await self.client.get_services()
+                    self.last_data_time = datetime.now()
+                except Exception as e:
+                    logger.error(f"Connection check failed: {e}")
+                    self.is_connected = False
+                    device_state["bluetooth_connected"] = False
+                    await self.attempt_reconnect()
+            await asyncio.sleep(5)
 
 
 bluetooth_manager = BluetoothManager()
