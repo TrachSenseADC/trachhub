@@ -27,6 +27,7 @@ Modules:
 
 """
 
+import json
 from flask import Flask, render_template, jsonify, request
 import struct
 import subprocess
@@ -52,6 +53,7 @@ analyzer = BreathingPatternAnalyzer(buffer_size=BUFFER_SIZE, batch_size=BUFFER_S
 in_anomaly = False
 anomaly_start = None
 anomaly_end = None
+current_state = "normal breathing"
 
 home_usr = Path.home()
 path_usr_log = os.path.join(home_usr, "trachhub.log")
@@ -156,52 +158,52 @@ class BluetoothManager:
                 return False
 
     def notification_handler(self, sender, data):
-        """
-        Called every time the ESP32 pushes a new byte.
-        When exactly BUFFER_SIZE samples are collected, analyse and broadcast.
-        """
+        """BLE notification → broadcast one JSON line right away."""
 
         try:
             value = struct.unpack("<B", data)[0]
-
             batch.append(value)
+            now_iso = datetime.now(tz=timezone.utc).isoformat()
 
+            # analyse every 1000 samples
+            global in_anomaly, anomaly_start, anomaly_end, current_state
             if len(batch) == BUFFER_SIZE:
-
                 analyzer.update_data(batch)
-                state = analyzer.detect_pattern()
+                current_state = analyzer.detect_pattern()        
+                batch.clear()                                    # start fresh window
 
-                now_iso = datetime.now(tz=timezone.utc).isoformat()
-
-                global in_anomaly, anomaly_start, anomaly_end
-
-                if state != "normal breathing":
-                    if not in_anomaly:  # anomaly just started
-                        in_anomaly = True
+                if current_state != "normal breathing":
+                    if not in_anomaly:                           #   anomaly just started
+                        in_anomaly    = True
                         anomaly_start = now_iso
-                        anomaly_end = None
-                else:  # state == normal
-                    if in_anomaly:  # anomaly just ended
-                        in_anomaly = False
+                        anomaly_end   = None
+                else:                                            #   back to normal
+                    if in_anomaly:                               #   anomaly just ended
+                        in_anomaly  = False
                         anomaly_end = now_iso
 
-                payload = {
-                    "type": "sensor_batch",
-                    "timestamp": now_iso,
-                    "values": batch.copy(),
-                    "analysis": state,
-                    "bluetooth_connected": bluetooth_manager.is_connected,
-                    "anomaly": {
-                        "start": anomaly_start,
-                        "end": anomaly_end,
-                    },
+            payload = {
+                "type": "sensor_data",
+                "timestamp": now_iso,
+                "data": value,
+                "bluetooth_connected": bluetooth_manager.is_connected,
+            }
+
+            if in_anomaly:                                       # anomaly still active
+                payload["anomaly"] = {"start": anomaly_start}
+
+            if anomaly_end is not None:                          # anomaly just ended
+                payload["anomaly"] = {
+                    "start": anomaly_start,
+                    "end":   anomaly_end,
                 }
 
-                asyncio.get_running_loop().create_task(
-                    websocket_server.broadcast_json(payload)
-                )
+                anomaly_start = None
+                anomaly_end   = None
 
-                batch.clear()
+            asyncio.get_running_loop().create_task(
+                websocket_server.broadcast_data(json.dumps(payload))
+            )
 
             device_state["device_data"] = value
             self.last_data_time = datetime.now()
