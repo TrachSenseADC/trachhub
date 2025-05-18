@@ -44,11 +44,17 @@ import signal
 from datetime import datetime
 import sys
 from pathlib import Path
+from services.ws import WebSocketServer
+from backend.src.data_processing.analyzer import BreathingPatternAnalyzer
+
+BUFFER_SIZE = 1_000
+batch: list[int] = []
+analyzer = BreathingPatternAnalyzer(buffer_size=BUFFER_SIZE, batch_size=BUFFER_SIZE)
+
 
 home_usr = Path.home()
 path_usr_log = os.path.join(home_usr, 'trachhub.log')
 
-counter = 0
 
 print(path_usr_log)
 logging.basicConfig(
@@ -140,17 +146,38 @@ class BluetoothManager:
                 return False
      
     def notification_handler(self, sender, data):
-        global counter
+        """
+        Called every time the ESP32 pushes a new byte.
+        When exactly BUFFER_SIZE samples are collected, analyse and broadcast.
+        """
+
         try:
-            value = struct.unpack('<B', data)[0]
-            if counter == 200:
-                logger.info(f"Notifications received from TrachSense: {value}")
-                counter = 0
+            value = struct.unpack('<B', data)[0]       
+
+            batch.append(value)
+
+            if len(batch) == BUFFER_SIZE:
+
+                analyzer.update_data(batch)
+                state = analyzer.detect_pattern()
+
+                payload = {
+                    "type": "sensor_batch",
+                    "timestamp": datetime.now().isoformat(),
+                    "values": batch.copy(),               # send the raw 1 000 readings
+                    "analysis": state,                    # e.g. "partial blockage"
+                    "bluetooth_connected": bluetooth_manager.is_connected,
+                }
+
+                asyncio.get_running_loop().create_task(
+                    websocket_server.broadcast_json(payload)
+                )
+
+                batch.clear()                           
+
             device_state['device_data'] = value
             self.last_data_time = datetime.now()
 
-            asyncio.create_task(websocket_server.broadcast_data(value))
-            logger.info("value brodcasted")
         except Exception as e:
             logger.error(f"Error in notification handler: {e}")
 
@@ -204,12 +231,7 @@ class BluetoothManager:
 
 bluetooth_manager = BluetoothManager()
 
-
-
-from services.ws import WebSocketServer
-
-# Create an instance of the WebSocket server
-websocket_server = WebSocketServer(log=logger)
+websocket_server = WebSocketServer(log=logger, ble_manager=bluetooth_manager)
 
 def get_wifi_networks():
     """
