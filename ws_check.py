@@ -20,7 +20,7 @@ async def check_connection():
 
             recv_task = asyncio.create_task(receiver())
 
-            await asyncio.sleep(30)
+            await asyncio.sleep(200)
             recv_task.cancel()
 
     except Exception as e:
