@@ -140,6 +140,7 @@ class BluetoothManager:
                 return False
      
     def notification_handler(self, sender, data):
+        global counter
         try:
             value = struct.unpack('<B', data)[0]
             if counter == 200:
