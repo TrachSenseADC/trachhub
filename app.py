@@ -267,15 +267,17 @@ class WebSocketServer:
             "bluetooth_connected": bluetooth_manager.is_connected
         })
 
-        # logger.info(f"Broadcasting data: {message}")
+        logger.info(f"Broadcasting data: {message}")
 
         if not self.connected_clients:
+            logger.info("oopsie")
             return
 
         async with self.broadcast_lock:
             for client in list(self.connected_clients):
                 try:
                     await client.send(message)
+                    logger.info("message sent")
                 except:
                     self.connected_clients.remove(client)
 
