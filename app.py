@@ -46,9 +46,13 @@ from pathlib import Path
 from services.ws import WebSocketServer
 from backend.src.data_processing.analyzer import BreathingPatternAnalyzer
 
-BUFFER_SIZE = 1_000
-batch = []
-analyzer = BreathingPatternAnalyzer(buffer_size=BUFFER_SIZE, batch_size=BUFFER_SIZE)
+BUFFER_ANALYZER = 1000
+BUFFER_STREAM = 10
+
+
+batch_1000 = []
+chunk_10 = []
+analyzer = BreathingPatternAnalyzer(buffer_size=BUFFER_ANALYZER, batch_size=BUFFER_ANALYZER)
 
 in_anomaly = False
 anomaly_start = None
@@ -157,42 +161,44 @@ class BluetoothManager:
                 logger.error(f"Failed to connect: {e}")
                 return False
 
-    def notification_handler(self, sender, data):
-        """BLE notification → broadcast one JSON line right away."""
+def notification_handler(self, sender, data):
+    """BLE notification → stream out 10-value chunks + anomaly info."""
 
-        try:
-            value = struct.unpack("<B", data)[0]
-            batch.append(value)
-            now_iso = datetime.now(tz=timezone.utc).isoformat()
+    try:
+        value = struct.unpack("<B", data)[0]
+        now_iso = datetime.now(tz=timezone.utc).isoformat()
 
-            # analyse every 1000 samples
-            global in_anomaly, anomaly_start, anomaly_end, current_state
-            if len(batch) == BUFFER_SIZE:
-                analyzer.update_data(batch)
-                current_state = analyzer.detect_pattern()        
-                batch.clear()                                    # start fresh window
+        batch_1000.append(value)
+        if len(batch_1000) == BUFFER_ANALYZER:
+            analyzer.update_data(batch_1000)
+            current_state = analyzer.detect_pattern()     
+            batch_1000.clear()
 
-                if current_state != "normal breathing":
-                    if not in_anomaly:                           #   anomaly just started
-                        in_anomaly    = True
-                        anomaly_start = now_iso
-                        anomaly_end   = None
-                else:                                            #   back to normal
-                    if in_anomaly:                               #   anomaly just ended
-                        in_anomaly  = False
-                        anomaly_end = now_iso
+            global in_anomaly, anomaly_start, anomaly_end
+            if current_state != "normal breathing":
+                if not in_anomaly:                        # anomaly just started
+                    in_anomaly    = True
+                    anomaly_start = now_iso
+                    anomaly_end   = None
+            else:                                         # back to normal
+                if in_anomaly:                            # anomaly ends here
+                    in_anomaly  = False
+                    anomaly_end = now_iso
 
+        chunk_10.append(value)
+        if len(chunk_10) == BUFFER_STREAM:
             payload = {
-                "type": "sensor_data",
+                "type": "sensor_chunk",
                 "timestamp": now_iso,
-                "data": value,
+                "values": chunk_10.copy(),               # 10 raw readings
                 "bluetooth_connected": bluetooth_manager.is_connected,
             }
 
-            if in_anomaly:                                       # anomaly still active
+            # attach anomaly field while episode is active
+            if in_anomaly:
                 payload["anomaly"] = {"start": anomaly_start}
 
-            if anomaly_end is not None:                          # anomaly just ended
+            if anomaly_end is not None:
                 payload["anomaly"] = {
                     "start": anomaly_start,
                     "end":   anomaly_end,
@@ -205,11 +211,13 @@ class BluetoothManager:
                 websocket_server.broadcast_data(json.dumps(payload))
             )
 
-            device_state["device_data"] = value
-            self.last_data_time = datetime.now()
+            chunk_10.clear()                              # ready for next 10
 
-        except Exception as e:
-            logger.error(f"Error in notification handler: {e}")
+        device_state["device_data"] = value
+        self.last_data_time = datetime.now()
+
+    except Exception as e:
+        logger.error(f"Error in notification handler: {e}")
 
     def handle_disconnect(self, client):
         """

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import asyncio, json, websockets, logging, time
 
-URI = "wss://1ae8-2607-fb91-1408-4068-818e-f254-ffad-b1a5.ngrok-free.app/"
+URI = "wss://a8cb-2607-fb91-1408-4068-818e-f254-ffad-b1a5.ngrok-free.app/"
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s")
 
 async def receive_forever(ws: websockets.WebSocketClientProtocol) -> None:
