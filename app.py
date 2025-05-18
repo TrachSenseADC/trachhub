@@ -1,3 +1,4 @@
+                                    
                                                                                                                      
 """
 TrachHub - Bluetooth and WiFi Management Server
@@ -141,7 +142,6 @@ class BluetoothManager:
             value = struct.unpack('<B', data)[0]
             # logger.info(f"Notification received from TrachSense: {value}")
             device_state['device_data'] = value
-            
             self.last_data_time = datetime.now()
             asyncio.create_task(websocket_server.broadcast_data(value))
         except Exception as e:
@@ -186,7 +186,7 @@ class BluetoothManager:
             if self.is_connected and self.client:
                 try:
                     # ping the device to check connection
-                    # services = await self.client.get_services()
+                    services = await self.client.get_services()
                     self.last_data_time = datetime.now()
                 except Exception as e:
                     logger.error(f"Connection check failed: {e}")
@@ -260,7 +260,7 @@ class WebSocketServer:
             "bluetooth_connected": bluetooth_manager.is_connected
         })
 
-        logger.info(f"Broadcasting data: {message}")
+        # logger.info(f"Broadcasting data: {message}")
 
         if not self.connected_clients:
             return
