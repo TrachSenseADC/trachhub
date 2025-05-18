@@ -200,6 +200,7 @@ class BluetoothManager:
                 # attach anomaly field while episode is active
                 if in_anomaly:
                     payload["anomaly"] = {"start": anomaly_start}
+                    payload['anomaly_type'] = {"type": current_state}
 
                 if anomaly_end is not None:
                     payload["anomaly"] = {
