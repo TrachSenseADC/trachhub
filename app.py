@@ -331,7 +331,7 @@ class WebSocketServer:
                 except:
                     self.connected_clients.remove(client)
 
-    async def start(self, host='localhost', port=8765):
+    async def start(self, host='0.0.0.0', port=8765):
         """Start the WebSocket server"""
         self.server = await websockets.serve(
             self.handler,
