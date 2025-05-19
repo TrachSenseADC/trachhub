@@ -182,8 +182,7 @@ class BluetoothManager:
         global in_anomaly, anomaly_start, anomaly_end, current_state
         try:
             value = struct.unpack("<B", data)[0]
-            now_iso = datetime.now(tz=timezone.utc).isoformat()
-
+            now = datetime.now(tz=timezone.utc)  # REAL datetime
 
             batch_100.append(value)
             if len(batch_100) == BUFFER_ANALYZER:
@@ -195,7 +194,7 @@ class BluetoothManager:
                 if current_state != "normal breathing":
                     if not in_anomaly:  # anomaly just started
                         in_anomaly = True
-                        anomaly_start = now_iso
+                        anomaly_start = now
                         anomaly_end = None
 
                         print(f"Anomaly started: {current_state}")
@@ -203,18 +202,17 @@ class BluetoothManager:
                 else:  # back to normal
                     if in_anomaly:  # anomaly ends here
                         in_anomaly = False
-                        anomaly_end = now_iso
-                        duration = (datetime.fromisoformat(anomaly_end) 
-                                    - datetime.fromisoformat(anomaly_start)).total_seconds()
+                        anomaly_end = now
+                        duration = (anomaly_end - anomaly_start).total_seconds()
 
                         # not sure how good of an idea this is
-                        compute_severity = lambda d: (
-                            "high" if d > 30
-                            else "medium" if d > 10
-                            else "low"
+                        severity = (
+                            "high"
+                            if duration > 30
+                            else "medium" if duration > 10 else "low"
                         )
 
-                        print(f"Anomaly ended: {duration:.2f} seconds")
+                        print(f"Anomaly ended: {duration:.2f} s (sev={severity})")
                         print("Logging anomaly to events DB")
 
                         # havent tested this yet, but should work in theory, tomorrow
@@ -226,33 +224,30 @@ class BluetoothManager:
                                 end_time=anomaly_end,
                                 note="Auto-logged via BLE stream",
                                 duration=duration,
-                                severity=compute_severity(duration)
+                                severity=severity,
                             )
                             session.add(anomaly)
 
                             print("Adding {}", anomaly.to_dict())
                             session.commit()
 
-                        
-
             chunk_100.append(value)
             if len(chunk_100) == BUFFER_STREAM:
                 payload = {
                     "type": "sensor_chunk",
-                    "timestamp": now_iso,
-                    "values": chunk_100.copy(),  # 10 raw readings
+                    "timestamp": now.isoformat(),
+                    "values": chunk_100.copy(),
                     "bluetooth_connected": bluetooth_manager.is_connected,
                 }
-
                 # attach anomaly field while episode is active
                 if in_anomaly:
-                    payload["anomaly"] = {"start": anomaly_start}
+                    payload["anomaly"]      = {"start": anomaly_start.isoformat()}
                     payload["anomaly_type"] = current_state
 
                 if anomaly_end is not None:
                     payload["anomaly"] = {
-                       "start": anomaly_start,
-                        "end": anomaly_end,
+                        "start": anomaly_start.isoformat(),
+                        "end":   anomaly_end.isoformat(),
                     }
 
                     anomaly_start = None
