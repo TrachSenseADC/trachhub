@@ -182,8 +182,7 @@ class BluetoothManager:
         global in_anomaly, anomaly_start, anomaly_end, current_state
         try:
             value = struct.unpack("<B", data)[0]
-            now = datetime.now(tz=timezone.utc)
-            now_iso = now.isoformat()
+            now_iso = datetime.now(tz=timezone.utc).isoformat()
 
 
             batch_100.append(value)
@@ -196,7 +195,7 @@ class BluetoothManager:
                 if current_state != "normal breathing":
                     if not in_anomaly:  # anomaly just started
                         in_anomaly = True
-                        anomaly_start = now
+                        anomaly_start = now_iso
                         anomaly_end = None
 
                         print(f"Anomaly started: {current_state}")
@@ -204,8 +203,9 @@ class BluetoothManager:
                 else:  # back to normal
                     if in_anomaly:  # anomaly ends here
                         in_anomaly = False
-                        anomaly_end = now
-                        duration = (anomaly_end - anomaly_start).total_seconds()
+                        anomaly_end = now_iso
+                        duration = (datetime.fromisoformat(anomaly_end) 
+                                    - datetime.fromisoformat(anomaly_start)).total_seconds()
 
                         # not sure how good of an idea this is
                         compute_severity = lambda d: (
@@ -222,8 +222,8 @@ class BluetoothManager:
                             anomaly = Anomaly(
                                 uuid=str(uuid.uuid4()),
                                 title=current_state.lower(),
-                                start_time=anomaly_start.isoformat(),
-                                end_time=anomaly_end.isoformat(),
+                                start_time=anomaly_start,
+                                end_time=anomaly_end,
                                 note="Auto-logged via BLE stream",
                                 duration=duration,
                                 severity=compute_severity(duration)
@@ -246,13 +246,13 @@ class BluetoothManager:
 
                 # attach anomaly field while episode is active
                 if in_anomaly:
-                    payload["anomaly"] = {"start": anomaly_start.isoformat()}
+                    payload["anomaly"] = {"start": anomaly_start}
                     payload["anomaly_type"] = current_state
 
                 if anomaly_end is not None:
                     payload["anomaly"] = {
-                       "start": anomaly_start.isoformat(),
-                        "end": anomaly_end.isoformat(),
+                       "start": anomaly_start,
+                        "end": anomaly_end,
                     }
 
                     anomaly_start = None
