@@ -163,7 +163,7 @@ class BluetoothManager:
                 logger.info(f"Connected to device: {address}")
 
                 # Start notification on the characteristic
-                services = await self.client.services
+                services = self.client.services
                 for service in services:
                     for char in service.characteristics:
                         if "notify" in char.properties:
