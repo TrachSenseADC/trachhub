@@ -182,7 +182,9 @@ class BluetoothManager:
         global in_anomaly, anomaly_start, anomaly_end, current_state
         try:
             value = struct.unpack("<B", data)[0]
-            now_iso = datetime.now(tz=timezone.utc).isoformat()
+            now = datetime.now(tz=timezone.utc)
+            now_iso = now.isoformat()
+
 
             batch_100.append(value)
             if len(batch_100) == BUFFER_ANALYZER:
@@ -194,7 +196,7 @@ class BluetoothManager:
                 if current_state != "normal breathing":
                     if not in_anomaly:  # anomaly just started
                         in_anomaly = True
-                        anomaly_start = now_iso
+                        anomaly_start = now
                         anomaly_end = None
 
                         print(f"Anomaly started: {current_state}")
@@ -202,7 +204,7 @@ class BluetoothManager:
                 else:  # back to normal
                     if in_anomaly:  # anomaly ends here
                         in_anomaly = False
-                        anomaly_end = now_iso
+                        anomaly_end = now
                         duration = (anomaly_end - anomaly_start).total_seconds()
 
                         # not sure how good of an idea this is
@@ -220,8 +222,8 @@ class BluetoothManager:
                             anomaly = Anomaly(
                                 uuid=str(uuid.uuid4()),
                                 title=current_state.lower(),
-                                start_time=anomaly_start,
-                                end_time=anomaly_end,
+                                start_time=anomaly_start.isoformat(),
+                                end_time=anomaly_end.isoformat(),
                                 note="Auto-logged via BLE stream",
                                 duration=duration,
                                 severity=compute_severity(duration)
