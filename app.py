@@ -60,11 +60,11 @@ from datetime import datetime, timezone
 import uuid
 
 BUFFER_ANALYZER = 100
-BUFFER_STREAM = 100
+BUFFER_STREAM = 50
 
 
 batch_100 = []
-chunk_100 = []
+chunk_50 = []
 analyzer = BreathingPatternAnalyzer(
     buffer_size=BUFFER_ANALYZER, batch_size=BUFFER_ANALYZER
 )
@@ -176,9 +176,9 @@ class BluetoothManager:
                 return False
 
     def notification_handler(self, sender, data):
-        """BLE notification -> stream out 100-value chunks + anomaly info."""
+        """BLE notification -> stream out 50-value chunks + anomaly info."""
 
-        global batch_100, chunk_100
+        global batch_100, chunk_50
         global in_anomaly, anomaly_start, anomaly_end, current_state
         try:
             value = struct.unpack("<B", data)[0]
@@ -231,12 +231,12 @@ class BluetoothManager:
                             print("Adding {}", anomaly.to_dict())
                             session.commit()
 
-            chunk_100.append(value)
-            if len(chunk_100) == BUFFER_STREAM:
+            chunk_50.append(value)
+            if len(chunk_50) == BUFFER_STREAM:
                 payload = {
                     "type": "sensor_chunk",
                     "timestamp": now.isoformat(),
-                    "values": chunk_100.copy(),
+                    "values": chunk_50.copy(),
                     "bluetooth_connected": bluetooth_manager.is_connected,
                 }
                 # attach anomaly field while episode is active
@@ -257,7 +257,7 @@ class BluetoothManager:
                     websocket_server.broadcast_data(payload)
                 )
 
-                chunk_100.clear()  # ready for next 10
+                chunk_50.clear()  # ready for next 10
 
             device_state["device_data"] = value
             self.last_data_time = datetime.now()
