@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Text
+from sqlalchemy import Column, String, DateTime, Text, Float
 from sqlalchemy.orm import declarative_base
 import uuid
 from datetime import datetime, timezone
@@ -15,6 +15,8 @@ class Anomaly(Base):
     start_time = Column(DateTime, nullable=False)
     end_time = Column(DateTime)
     note = Column(Text)
+    duration = Column(Float)           # duration in seconds
+    severity = Column(String(10))
 
     def to_dict(self):
         return {
@@ -22,7 +24,9 @@ class Anomaly(Base):
             "title": self.title,
             "start_time": self.start_time.isoformat() if self.start_time else None,
             "end_time": self.end_time.isoformat() if self.end_time else None,
-            "note": self.note
+            "note": self.note,
+            "duration": self.duration, 
+            "severity": self.severity
         }
 
 class Note(Base):

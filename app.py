@@ -200,6 +200,14 @@ class BluetoothManager:
                     if in_anomaly:  # anomaly ends here
                         in_anomaly = False
                         anomaly_end = now_iso
+                        duration = (anomaly_end - anomaly_start).total_seconds()
+
+                        # not sure how good of an idea this is
+                        compute_severity = lambda d: (
+                            "high" if d > 30
+                            else "medium" if d > 10
+                            else "low"
+                        )
 
                         # havent tested this yet, but should work in theory, tomorrow
                         with Session(engine) as session:
@@ -209,6 +217,8 @@ class BluetoothManager:
                                 start_time=anomaly_start,
                                 end_time=anomaly_end,
                                 note="Auto-logged via BLE stream",
+                                duration=duration,
+                                severity=compute_severity(duration)
                             )
                             session.add(anomaly)
                             session.commit()
