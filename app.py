@@ -29,6 +29,11 @@ Modules:
 
 import json
 from flask import Flask, render_template, jsonify, request
+
+# Events db 
+from backend.src.events.events import events_bp
+
+
 import struct
 import subprocess
 import threading
@@ -45,6 +50,8 @@ import sys
 from pathlib import Path
 from services.ws import WebSocketServer
 from backend.src.data_processing.analyzer import BreathingPatternAnalyzer
+from hypercorn.asyncio import serve
+from hypercorn.config import Config
 
 BUFFER_ANALYZER = 1000
 BUFFER_STREAM = 10
@@ -65,7 +72,6 @@ home_usr = Path.home()
 path_usr_log = os.path.join(home_usr, "trachhub.log")
 
 
-print(path_usr_log)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -82,8 +88,9 @@ logger = logging.getLogger(__name__)
 background_loop = None
 
 app = Flask(__name__)
+app.register_blueprint(events_bp)
 
-# signal.signal(signal.SIGINT, lambda x, y: None)
+
 
 device_state = {
     "wifi_connected": False,
@@ -490,9 +497,6 @@ def run_background_loop(loop):
     loop.run_forever()
 
 
-# if platform.system() != "Windows":
-#     # Initialize background tasks when running on a Linux/Raspberry Pi system
-#     asyncio.create_task(start_background_tasks())
 
 
 # Routes with async support
@@ -532,44 +536,6 @@ def wifi_connect_route():
     success = connect_wifi(data["ssid"], data["password"])
     return jsonify({"success": success})
 
-
-# lol, I'm not going to implement this
-# @app.route('/api/bluetooth/scan')
-# async def bluetooth_scan():
-#     """
-#     API endpoint to scan for nearby Bluetooth devices asynchronously. Calls `run_bluetooth_scan` to discover devices.
-
-#     Returns:
-#     - JSON response containing a list of detected Bluetooth devices (`{'devices': [...]}`)
-#     - On error, returns JSON with an error message and empty device list (`{'devices': [], 'error': ...}`)
-#     """
-#     try:
-#         devices = await run_bluetooth_scan()
-#         return jsonify({'devices': devices})
-#     except Exception as e:
-#         logger.error(f"Bluetooth scan error: {e}")
-#         return jsonify({'devices': [], 'error': str(e)}), 500
-
-# @app.route('/api/bluetooth/connect', methods=['POST'])
-# async def bluetooth_connect():
-#     """
-#     API endpoint to connect to a Bluetooth device asynchronously. Expects JSON payload with an `address` key.
-
-#     Returns:
-#     - JSON response with connection status and timestamp (`{'success': True/False, 'status': 'connected'/'failed', 'timestamp': ...}`)
-#     - On error, returns JSON with failure status and error message (`{'success': False, 'error': ...}`)
-#     """
-#     try:
-#         data = request.get_json()
-#         success = await connect_bluetooth_device(data['address'])
-#         return jsonify({
-#             'success': success,
-#             'status': 'connected' if success else 'failed',
-#             'timestamp': datetime.now().isoformat()
-#         })
-#     except Exception as e:
-#         logger.error(f"Bluetooth connect error: {e}")
-#         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route("/api/bluetooth/connect", methods=["POST"])
@@ -738,11 +704,13 @@ def health_check():
         }
     )
 
+@app.route("/api/events/add-anomaly")
+def create_anomlay():
+    data = request.json()
 
-from hypercorn.asyncio import serve
-from hypercorn.config import Config
 
 start_time = time.time()
+
 
 
 async def run_servers():
@@ -755,7 +723,7 @@ async def run_servers():
 
     # Configure and run Hypercorn (Flask) server
     config = Config()
-    config.bind = [f"{local_ip}:5000"]
+    config.bind = ["127.0.0.1:5000"]
     config.worker_class = "asyncio"
 
     flask_task = asyncio.create_task(serve(app, config))
@@ -783,8 +751,9 @@ if __name__ == "__main__":
             except Exception as e:
                 logger.warning(f"Failed to configure system settings: {e}")
 
-        print(f"TrachHub Server running at http://{local_ip}:5000")
-        print(f"WebSocket server running at ws://{local_ip}:8765")
+        print("TrachHub Server running at http://127.0.0.1:5000")
+        print("WebSocket server running at ws://127.0.0.1:8765")
+
 
         # Set up logging
         werkzeug_logger = logging.getLogger("werkzeug")
