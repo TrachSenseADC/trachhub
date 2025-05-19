@@ -60,7 +60,7 @@ from datetime import datetime, timezone
 import uuid
 
 BUFFER_ANALYZER = 100
-BUFFER_STREAM = 20
+BUFFER_STREAM = 1
 
 
 batch_100 = []
