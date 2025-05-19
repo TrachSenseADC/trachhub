@@ -59,12 +59,12 @@ from backend.src.models.events import Anomaly
 from datetime import datetime, timezone
 import uuid
 
-BUFFER_ANALYZER = 1000
-BUFFER_STREAM = 10
+BUFFER_ANALYZER = 100
+BUFFER_STREAM = 100
 
 
-batch_1000 = []
-chunk_10 = []
+batch_100 = []
+chunk_100 = []
 analyzer = BreathingPatternAnalyzer(
     buffer_size=BUFFER_ANALYZER, batch_size=BUFFER_ANALYZER
 )
@@ -176,19 +176,19 @@ class BluetoothManager:
                 return False
 
     def notification_handler(self, sender, data):
-        """BLE notification → stream out 10-value chunks + anomaly info."""
+        """BLE notification -> stream out 100-value chunks + anomaly info."""
 
-        global batch_1000, chunk_10
+        global batch_100, chunk_100
         global in_anomaly, anomaly_start, anomaly_end, current_state
         try:
             value = struct.unpack("<B", data)[0]
             now_iso = datetime.now(tz=timezone.utc).isoformat()
 
-            batch_1000.append(value)
-            if len(batch_1000) == BUFFER_ANALYZER:
-                analyzer.update_data(batch_1000)
+            batch_100.append(value)
+            if len(batch_100) == BUFFER_ANALYZER:
+                analyzer.update_data(batch_100)
                 current_state = analyzer.detect_pattern()
-                batch_1000.clear()
+                batch_100.clear()
 
                 global in_anomaly, anomaly_start, anomaly_end
                 if current_state != "normal breathing":
@@ -233,12 +233,12 @@ class BluetoothManager:
 
                         
 
-            chunk_10.append(value)
-            if len(chunk_10) == BUFFER_STREAM:
+            chunk_100.append(value)
+            if len(chunk_100) == BUFFER_STREAM:
                 payload = {
                     "type": "sensor_chunk",
                     "timestamp": now_iso,
-                    "values": chunk_10.copy(),  # 10 raw readings
+                    "values": chunk_100.copy(),  # 10 raw readings
                     "bluetooth_connected": bluetooth_manager.is_connected,
                 }
 
@@ -260,7 +260,7 @@ class BluetoothManager:
                     websocket_server.broadcast_data(payload)
                 )
 
-                chunk_10.clear()  # ready for next 10
+                chunk_100.clear()  # ready for next 10
 
             device_state["device_data"] = value
             self.last_data_time = datetime.now()
@@ -310,7 +310,7 @@ class BluetoothManager:
             if self.is_connected and self.client:
                 try:
                     # ping the device to check connection
-                    services = await self.client.get_services()
+                    services = self.client.services
                     self.last_data_time = datetime.now()
                 except Exception as e:
                     logger.error(f"Connection check failed: {e}")
