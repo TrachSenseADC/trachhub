@@ -39,7 +39,7 @@ import subprocess
 import threading
 import time
 import logging
-from bleak import BleakScanner, BleakClient
+from bleak import BleakClient, BleakScanner, BleakClient
 import socket
 import asyncio
 import platform
@@ -163,10 +163,17 @@ class BluetoothManager:
                 logger.info(f"Connected to device: {address}")
 
                 # Start notification on the characteristic
-                characteristic = "00002a1f-0000-1000-8000-00805f9b34fb"
-                await self.client.start_notify(
-                    characteristic, self.notification_handler
-                )
+                services = await self.client.services
+                for service in services:
+                    for char in service.characteristics:
+                        if "notify" in char.properties:
+                            logger.info(f"Found notifiable characteristic: {char.uuid}")
+                            await self.client.start_notify(char.uuid, self.notification_handler)
+                            self.characteristic_uuid = char.uuid  
+                            break
+                    else:   
+                        continue
+                    break
                 logger.info("Started notification on characteristic.")
 
                 asyncio.create_task(self.monitor_connection())
