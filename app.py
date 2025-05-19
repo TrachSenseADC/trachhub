@@ -30,7 +30,7 @@ Modules:
 import json
 from flask import Flask, render_template, jsonify, request
 
-# Events db 
+# Events db
 from backend.src.events.events import events_bp
 
 
@@ -52,6 +52,12 @@ from services.ws import WebSocketServer
 from backend.src.data_processing.analyzer import BreathingPatternAnalyzer
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
+
+from sqlalchemy.orm import Session
+from backend.src.data_processing.edb import engine
+from backend.src.models.events import Anomaly
+from datetime import datetime, timezone
+import uuid
 
 BUFFER_ANALYZER = 1000
 BUFFER_STREAM = 10
@@ -89,7 +95,6 @@ background_loop = None
 
 app = Flask(__name__)
 app.register_blueprint(events_bp)
-
 
 
 device_state = {
@@ -170,7 +175,6 @@ class BluetoothManager:
                 logger.error(f"Failed to connect: {e}")
                 return False
 
-
     def notification_handler(self, sender, data):
         """BLE notification → stream out 10-value chunks + anomaly info."""
 
@@ -197,6 +201,18 @@ class BluetoothManager:
                         in_anomaly = False
                         anomaly_end = now_iso
 
+                        # havent tested this yet, but should work in theory, tomorrow
+                        with Session(engine) as session:
+                            anomaly = Anomaly(
+                                uuid=str(uuid.uuid4()),
+                                title=current_state.lower(),
+                                start_time=anomaly_start,
+                                end_time=anomaly_end,
+                                note="Auto-logged via BLE stream",
+                            )
+                            session.add(anomaly)
+                            session.commit()
+
             chunk_10.append(value)
             if len(chunk_10) == BUFFER_STREAM:
                 payload = {
@@ -209,7 +225,7 @@ class BluetoothManager:
                 # attach anomaly field while episode is active
                 if in_anomaly:
                     payload["anomaly"] = {"start": anomaly_start}
-                    payload['anomaly_type'] = current_state
+                    payload["anomaly_type"] = current_state
 
                 if anomaly_end is not None:
                     payload["anomaly"] = {
@@ -232,7 +248,6 @@ class BluetoothManager:
         except Exception as e:
             logger.error(f"Error in notification handler: {e}")
 
-
     def handle_disconnect(self, client):
         """
         Callback method triggered on Bluetooth disconnection. Updates the connection
@@ -244,14 +259,14 @@ class BluetoothManager:
         if not self._lock.locked():
             asyncio.create_task(self.attempt_reconnect())
 
-
     async def attempt_reconnect(self):
         """
         Tries to reconnect to the Bluetooth device. Continues to retry until either
         the maximum number of attempts is reached or the connection is re-established.
         """
         while (
-            not self.is_connected and self.reconnect_attempts < self.max_reconnect_attempts
+            not self.is_connected
+            and self.reconnect_attempts < self.max_reconnect_attempts
         ):
             try:
                 self.reconnect_attempts += 1
@@ -265,7 +280,6 @@ class BluetoothManager:
             except Exception as e:
                 logger.error(f"Reconnection failed: {e}")
                 await asyncio.sleep(self.reconnect_delay)
-
 
     async def monitor_connection(self):
         """
@@ -497,8 +511,6 @@ def run_background_loop(loop):
     loop.run_forever()
 
 
-
-
 # Routes with async support
 @app.route("/")
 def index():
@@ -535,7 +547,6 @@ def wifi_connect_route():
     data = request.get_json()
     success = connect_wifi(data["ssid"], data["password"])
     return jsonify({"success": success})
-
 
 
 @app.route("/api/bluetooth/connect", methods=["POST"])
@@ -704,13 +715,13 @@ def health_check():
         }
     )
 
+
 @app.route("/api/events/add-anomaly")
 def create_anomlay():
     data = request.json()
 
 
 start_time = time.time()
-
 
 
 async def run_servers():
@@ -753,7 +764,6 @@ if __name__ == "__main__":
 
         print("TrachHub Server running at http://127.0.0.1:5000")
         print("WebSocket server running at ws://127.0.0.1:8765")
-
 
         # Set up logging
         werkzeug_logger = logging.getLogger("werkzeug")
