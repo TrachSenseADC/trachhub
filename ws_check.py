@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import asyncio, json, websockets, logging, time
 
-URI = "wss://localhost:5000/"
+URI = "wss://localhost:8765/"
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s")
 
 async def receive_forever(ws: websockets.WebSocketClientProtocol) -> None:
