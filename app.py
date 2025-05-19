@@ -189,6 +189,7 @@ class BluetoothManager:
         global in_anomaly, anomaly_start, anomaly_end, current_state
         try:
             value = struct.unpack("<B", data)[0]
+            print("value: {value}")
             now = datetime.now(tz=timezone.utc)  # REAL datetime
 
             batch_100.append(value)
