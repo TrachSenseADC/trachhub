@@ -196,6 +196,9 @@ class BluetoothManager:
                         in_anomaly = True
                         anomaly_start = now_iso
                         anomaly_end = None
+
+                        print(f"Anomaly started: {current_state}")
+
                 else:  # back to normal
                     if in_anomaly:  # anomaly ends here
                         in_anomaly = False
@@ -209,6 +212,9 @@ class BluetoothManager:
                             else "low"
                         )
 
+                        print(f"Anomaly ended: {duration:.2f} seconds")
+                        print("Logging anomaly to events DB")
+
                         # havent tested this yet, but should work in theory, tomorrow
                         with Session(engine) as session:
                             anomaly = Anomaly(
@@ -221,7 +227,11 @@ class BluetoothManager:
                                 severity=compute_severity(duration)
                             )
                             session.add(anomaly)
+
+                            print("Adding {}", anomaly.to_dict())
                             session.commit()
+
+                        
 
             chunk_10.append(value)
             if len(chunk_10) == BUFFER_STREAM:

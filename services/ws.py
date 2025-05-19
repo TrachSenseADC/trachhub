@@ -77,7 +77,7 @@ class WebSocketServer:
         else:
             message = data  # already a JSON string or bytes
 
-        self.logger.info("Broadcasting: %s", message)
+        # self.logger.info("Broadcasting: %s", message)
 
         if not self.connected_clients:
             return
