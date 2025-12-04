@@ -166,6 +166,7 @@ class BluetoothManager:
                 services = self.client.services
                 for service in services:
                     for char in service.characteristics:
+                        logger.info(f"Characteristics: {char.properties}")
                         if "notify" in char.properties:
                             logger.info(f"Found notifiable characteristic: {char.uuid}")
                             await self.client.start_notify(char.uuid, self.notification_handler)
