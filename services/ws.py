@@ -15,8 +15,6 @@ sys.path.insert(
 from backend.src.db import Database
 from backend.src.data_processing.analyzer import BreathingPatternAnalyzer
 
-# from app import device_state, bluetooth_manager
-
 load_dotenv()
 import websockets
 from functools import partial

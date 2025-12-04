@@ -1,3 +1,6 @@
 flask
 bleak
 hypercorn
+sqlalchemy
+websockets
+dotenv

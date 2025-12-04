@@ -188,86 +188,89 @@ class BluetoothManager:
         global batch_100, chunk_50
         global in_anomaly, anomaly_start, anomaly_end, current_state
         try:
-            value = struct.unpack("<B", data)[0]
-            print("value: {value}")
-            now = datetime.now(tz=timezone.utc)  # REAL datetime
+            values = list(data)
+            logger.info(f"Received values: {values}")
+            
+            now = datetime.now(tz=timezone.utc)
 
-            batch_100.append(value)
-            if len(batch_100) == BUFFER_ANALYZER:
-                analyzer.update_data(batch_100)
-                current_state = analyzer.detect_pattern()
-                batch_100.clear()
+            for value in values:
+                batch_100.append(value)
+                if len(batch_100) == BUFFER_ANALYZER:
+                    analyzer.update_data(batch_100)
+                    current_state = analyzer.detect_pattern()
+                    batch_100.clear()
 
-                global in_anomaly, anomaly_start, anomaly_end
-                if current_state != "normal breathing":
-                    if not in_anomaly:  # anomaly just started
-                        in_anomaly = True
-                        anomaly_start = now
+                    global in_anomaly, anomaly_start, anomaly_end
+                    if current_state != "normal breathing":
+                        if not in_anomaly:  # anomaly just started
+                            in_anomaly = True
+                            anomaly_start = now
+                            anomaly_end = None
+
+                            print(f"Anomaly started: {current_state}")
+
+                    else:  # back to normal
+                        if in_anomaly:  # anomaly ends here
+                            in_anomaly = False
+                            anomaly_end = now
+                            duration = (anomaly_end - anomaly_start).total_seconds()
+
+                            # not sure how good of an idea this is
+                            severity = (
+                                "high"
+                                if duration > 30
+                                else "medium" if duration > 10 else "low"
+                            )
+
+                            print(f"Anomaly ended: {duration:.2f} s (sev={severity})")
+                            print("Logging anomaly to events DB")
+
+                            # havent tested this yet, but should work in theory, tomorrow
+                            with Session(engine) as session:
+                                anomaly = Anomaly(
+                                    uuid=str(uuid.uuid4()),
+                                    title=current_state.lower(),
+                                    start_time=anomaly_start,
+                                    end_time=anomaly_end,
+                                    note="Auto-logged via BLE stream",
+                                    duration=duration,
+                                    severity=severity,
+                                )
+                                session.add(anomaly)
+
+                                print("Adding {}", anomaly.to_dict())
+                                session.commit()
+
+                chunk_50.append(value)
+                if len(chunk_50) == BUFFER_STREAM:
+                    payload = {
+                        "type": "sensor_chunk",
+                        "timestamp": now.isoformat(),
+                        "values": chunk_50.copy(),
+                        "bluetooth_connected": bluetooth_manager.is_connected,
+                    }
+                    # attach anomaly field while episode is active
+                    if in_anomaly:
+                        payload["anomaly"]      = {"start": anomaly_start.isoformat()}
+                        payload["anomaly_type"] = current_state
+
+                    if anomaly_end is not None:
+                        payload["anomaly"] = {
+                            "start": anomaly_start.isoformat(),
+                            "end":   anomaly_end.isoformat(),
+                        }
+
+                        anomaly_start = None
                         anomaly_end = None
 
-                        print(f"Anomaly started: {current_state}")
+                    asyncio.get_running_loop().create_task(
+                        websocket_server.broadcast_data(payload)
+                    )
 
-                else:  # back to normal
-                    if in_anomaly:  # anomaly ends here
-                        in_anomaly = False
-                        anomaly_end = now
-                        duration = (anomaly_end - anomaly_start).total_seconds()
+                    chunk_50.clear()  # ready for next 10
 
-                        # not sure how good of an idea this is
-                        severity = (
-                            "high"
-                            if duration > 30
-                            else "medium" if duration > 10 else "low"
-                        )
-
-                        print(f"Anomaly ended: {duration:.2f} s (sev={severity})")
-                        print("Logging anomaly to events DB")
-
-                        # havent tested this yet, but should work in theory, tomorrow
-                        with Session(engine) as session:
-                            anomaly = Anomaly(
-                                uuid=str(uuid.uuid4()),
-                                title=current_state.lower(),
-                                start_time=anomaly_start,
-                                end_time=anomaly_end,
-                                note="Auto-logged via BLE stream",
-                                duration=duration,
-                                severity=severity,
-                            )
-                            session.add(anomaly)
-
-                            print("Adding {}", anomaly.to_dict())
-                            session.commit()
-
-            chunk_50.append(value)
-            if len(chunk_50) == BUFFER_STREAM:
-                payload = {
-                    "type": "sensor_chunk",
-                    "timestamp": now.isoformat(),
-                    "values": chunk_50.copy(),
-                    "bluetooth_connected": bluetooth_manager.is_connected,
-                }
-                # attach anomaly field while episode is active
-                if in_anomaly:
-                    payload["anomaly"]      = {"start": anomaly_start.isoformat()}
-                    payload["anomaly_type"] = current_state
-
-                if anomaly_end is not None:
-                    payload["anomaly"] = {
-                        "start": anomaly_start.isoformat(),
-                        "end":   anomaly_end.isoformat(),
-                    }
-
-                    anomaly_start = None
-                    anomaly_end = None
-
-                asyncio.get_running_loop().create_task(
-                    websocket_server.broadcast_data(payload)
-                )
-
-                chunk_50.clear()  # ready for next 10
-
-            device_state["device_data"] = value
+                device_state["device_data"] = value
+            
             self.last_data_time = datetime.now()
 
         except Exception as e:
@@ -773,11 +776,14 @@ async def run_servers():
 
 if __name__ == "__main__":
     try:
-        # Get local IP
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 1))
-        local_ip = s.getsockname()[0]
-        s.close()
+
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 1))
+            local_ip = s.getsockname()[0]
+            s.close()
+        except Exception:
+            local_ip = "127.0.0.1"
 
         if platform.system() != "Windows":
             try:

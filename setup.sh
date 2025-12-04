@@ -63,7 +63,7 @@ if ! grep -q "shared_preload_libraries.*timescaledb" "$POSTGRES_CONF"; then
   echo "shared_preload_libraries = 'timescaledb'" | sudo tee -a "$POSTGRES_CONF"
 fi
 
-# Restart PostgreSQL to apply changes
+# restart PostgreSQL to apply changes
 sudo systemctl restart postgresql
 
 # Configure PostgreSQL user and database
@@ -98,11 +98,11 @@ response=$(curl -s https://raw.githubusercontent.com/TrachSenseADC/trachhub/refs
 python3 -m pip install --no-cache-dir -r requirements.txt
 
 # Launch TrachHub server in the background
-echo -e "\n🚀 Step 7/7: Starting TrachHub server..."
+echo -e "\nStep 7/7: Starting TrachHub server..."
 cd "$INSTALL_DIR/scripts"
 python3 app.py &
 
 
-echo -e "\n✅ Setup complete! TrachHub is now running."
+echo -e "\nSetup complete! TrachHub is now running."
 echo "--------------------------------------------------------------"
 echo "To stop TrachHub, restart your device or contact support."
