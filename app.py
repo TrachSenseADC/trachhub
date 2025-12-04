@@ -162,20 +162,15 @@ class BluetoothManager:
                 device_state["last_bluetooth_connection"] = datetime.now().isoformat()
                 logger.info(f"Connected to device: {address}")
 
-                # Start notification on the characteristic
                 services = self.client.services
                 for service in services:
                     for char in service.characteristics:
-                        logger.info(f"Characteristics: {char.properties}")
-                        if "notify" in char.properties:
-                            logger.info(f"Found notifiable characteristic: {char.uuid}")
+                        logger.info(f"Characteristic: {char.uuid}, Properties: {char.properties}")
+                        if "notify" in char.properties or "read" in char.properties:
+                            logger.info(f"Subscribing to characteristic: {char.uuid}")
                             await self.client.start_notify(char.uuid, self.notification_handler)
-                            self.characteristic_uuid = char.uuid  
-                            break
-                    else:   
-                        continue
-                    break
-                logger.info("Started notification on characteristic.")
+                            
+                logger.info("Finished subscribing to characteristics.")
 
                 asyncio.create_task(self.monitor_connection())
                 return True
