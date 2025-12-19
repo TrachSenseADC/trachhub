@@ -53,11 +53,15 @@ from backend.src.data_processing.analyzer import BreathingPatternAnalyzer
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
 
+
 from sqlalchemy.orm import Session
 from backend.src.data_processing.edb import engine
 from backend.src.models.events import Anomaly
 from datetime import datetime, timezone
 import uuid
+
+from calibrate import calibrate
+from CONSTANTS import A, B, C, GAS_READING
 
 BUFFER_ANALYZER = 100
 BUFFER_STREAM = 1
@@ -276,7 +280,7 @@ class BluetoothManager:
             
             # using calculated 'diff' for breathing patterns
             value = parsed["diff"]
-            logger.info(f"Received value (diff): {value}")
+            logger.info(f"diff: {value} | calculated: {calibrate(A, B, C, value, GAS_READING)}")
             
             now = datetime.now(tz=timezone.utc)
 
