@@ -5,6 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
+    "flask",
+    "bleak",
+    "hypercorn",
+    "sqlalchemy",
+    "websockets",
+    "python-dotenv",
     "matplotlib",
     "numpy",
     "psycopg2",
