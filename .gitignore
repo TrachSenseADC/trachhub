@@ -31,3 +31,4 @@ __pycache__/
 .env
 
 bluetooth_review.md
+bt_check.py 

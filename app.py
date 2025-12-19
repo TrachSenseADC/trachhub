@@ -107,6 +107,55 @@ device_state = {
 }
 
 
+# helper to convert full bluetooth uuid to short 16-bit hex if possible
+def convertUUIDtoShortID(uuid_str):
+    if "-" in uuid_str:
+        # check if it matches the bluetooth base uuid
+        if uuid_str.lower().endswith("-0000-1000-8000-00805f9b34fb"):
+            return uuid_str[4:8]
+    return uuid_str
+
+# helper to build the 26-byte trachsense config packet
+def build_config_packet(duration=3600, alert_level=1):
+    import struct
+    packet = bytearray(26)
+    packet[0] = 2 # mode
+    
+    # duration (bytes 1-4, uint32, little-endian)
+    duration_bytes = struct.pack("<I", duration)
+    packet[1:5] = duration_bytes
+    
+    # alert level (bytes 11-12, uint16, little-endian)
+    alert_bytes = struct.pack("<H", alert_level)
+    packet[11:13] = alert_bytes
+    
+    # cr lf (bytes 24-25)
+    packet[24] = 13 # cr
+    packet[25] = 10 # lf
+    
+    return packet
+
+# helper to parse trachsense data packets
+def parse_packet(data):
+    if len(data) < 8:
+        return None
+    import struct
+    # timestamp (4 bytes, little-endian uint32, divided by 100000.0)
+    timestamp_raw = struct.unpack("<I", data[0:4])[0]
+    timestamp_s = timestamp_raw / 100000.0
+    
+    # on/off values (swapped endian-ness in the protocol)
+    on_val = data[5] + (data[4] << 8)
+    off_val = data[7] + (data[6] << 8)
+    diff = on_val - off_val
+    
+    return {
+        "time": timestamp_s,
+        "on": on_val,
+        "off": off_val,
+        "diff": diff
+    }
+
 class BluetoothManager:
     """
     Manages Bluetooth device connection and reconnection attempts with built-in
@@ -163,15 +212,33 @@ class BluetoothManager:
                 logger.info(f"Connected to device: {address}")
 
                 services = self.client.services
+                chars_by_short = {}
                 for service in services:
                     for char in service.characteristics:
-                        logger.info(f"Characteristic: {char.uuid}, Properties: {char.properties}")
-                        print("65523" in char.properties)
-                        if "notify" in char.properties or "read" in char.properties:
-                            logger.info(f"Subscribing to characteristic: {char.uuid}")
-                            await self.client.start_notify(char.uuid, self.notification_handler)
-                            
-                logger.info("Finished subscribing to characteristics.")
+                        short_id = convertUUIDtoShortID(char.uuid)
+                        chars_by_short[short_id] = char
+                        logger.info(f"discovered: {short_id} ({char.uuid})")
+
+                # trachsense protocol sequence
+                # fff4: stream, fff3: config, fff1: command
+                stream_char = chars_by_short.get("fff4")
+                config_char = chars_by_short.get("fff3")
+                cmd_char    = chars_by_short.get("fff1")
+
+                if stream_char:
+                    logger.info(f"subscribing to {stream_char.uuid}")
+                    await self.client.start_notify(stream_char.uuid, self.notification_handler)
+
+                    if config_char:
+                        logger.info(f"sending config to {config_char.uuid}")
+                        packet = build_config_packet()
+                        await self.client.write_gatt_char(config_char.uuid, packet, response=True)
+                    
+                    if cmd_char:
+                        logger.info(f"sending start command 'S' to {cmd_char.uuid}")
+                        await self.client.write_gatt_char(cmd_char.uuid, b"S", response=True)
+                
+                logger.info("bluetooth connection sequence finished.")
 
                 asyncio.create_task(self.monitor_connection())
                 return True
@@ -180,106 +247,119 @@ class BluetoothManager:
                 return False
 
     def notification_handler(self, sender, data):
-        """ble notification -> stream out 50-value chunks + anomaly info."""
+        """ble notification -> parse 8-byte packet -> store diff value."""
 
         global batch_100, chunk_50
         global in_anomaly, anomaly_start, anomaly_end, current_state
         try:
-            values = list(data)
-            logger.info(f"Received values: {values}")
+            parsed = parse_packet(data)
+            if not parsed:
+                # ignore short or invalid packets
+                return
+            
+            # using calculated 'diff' for breathing patterns
+            value = parsed["diff"]
+            logger.info(f"Received value (diff): {value}")
             
             now = datetime.now(tz=timezone.utc)
 
-            for value in values:
-                batch_100.append(value)
-                if len(batch_100) == BUFFER_ANALYZER:
-                    analyzer.update_data(batch_100)
-                    current_state = analyzer.detect_pattern()
-                    batch_100.clear()
+            batch_100.append(value)
+            if len(batch_100) == BUFFER_ANALYZER:
+                analyzer.update_data(batch_100)
+                current_state = analyzer.detect_pattern()
+                batch_100.clear()
 
-                    global in_anomaly, anomaly_start, anomaly_end
-                    if current_state != "normal breathing":
-                        if not in_anomaly:  # anomaly just started
-                            in_anomaly = True
-                            anomaly_start = now
-                            anomaly_end = None
-
-                            print(f"anomaly started: {current_state}")
-
-                    else:  # back to normal
-                        if in_anomaly:  # anomaly ends here
-                            in_anomaly = False
-                            anomaly_end = now
-                            duration = (anomaly_end - anomaly_start).total_seconds()
-
-                            # severity assessment based on duration
-                            severity = (
-                                "high"
-                                if duration > 30
-                                else "medium" if duration > 10 else "low"
-                            )
-
-                            print(f"anomaly ended: {duration:.2f} s (sev={severity})")
-                            print("logging anomaly to events db")
-
-                            # log anomaly to the database
-                            with Session(engine) as session:
-                                anomaly = Anomaly(
-                                    uuid=str(uuid.uuid4()),
-                                    title=current_state.lower(),
-                                    start_time=anomaly_start,
-                                    end_time=anomaly_end,
-                                    note="auto-logged via ble stream",
-                                    duration=duration,
-                                    severity=severity,
-                                )
-                                session.add(anomaly)
-
-                                print("adding {}", anomaly.to_dict())
-                                session.commit()
-
-                chunk_50.append(value)
-                if len(chunk_50) == BUFFER_STREAM:
-                    payload = {
-                        "type": "sensor_chunk",
-                        "timestamp": now.isoformat(),
-                        "values": chunk_50.copy(),
-                        "bluetooth_connected": bluetooth_manager.is_connected,
-                    }
-                    # attach anomaly field while episode is active
-                    if in_anomaly:
-                        payload["anomaly"]      = {"start": anomaly_start.isoformat()}
-                        payload["anomaly_type"] = current_state
-
-                    if anomaly_end is not None:
-                        payload["anomaly"] = {
-                            "start": anomaly_start.isoformat(),
-                            "end":   anomaly_end.isoformat(),
-                        }
-
-                        anomaly_start = None
+                global in_anomaly, anomaly_start, anomaly_end
+                if current_state != "normal breathing":
+                    if not in_anomaly:  # anomaly just started
+                        in_anomaly = True
+                        anomaly_start = now
                         anomaly_end = None
+                        print(f"anomaly started: {current_state}")
 
-                    # broadcast to all connected websocket clients
-                    asyncio.get_running_loop().create_task(
-                        websocket_server.broadcast_data(payload)
-                    )
+                else:  # back to normal
+                    if in_anomaly:  # anomaly ends here
+                        in_anomaly = False
+                        anomaly_end = now
+                        duration = (anomaly_end - anomaly_start).total_seconds()
 
-                    chunk_50.clear()  # ready for next chunk
+                        # severity assessment based on duration
+                        severity = (
+                            "high"
+                            if duration > 30
+                            else "medium" if duration > 10 else "low"
+                        )
 
-                device_state["device_data"] = value
-            
+                        print(f"anomaly ended: {duration:.2f} s (sev={severity})")
+                        print("logging anomaly to events db")
+
+                        # log anomaly to the database
+                        with Session(engine) as session:
+                            anomaly = Anomaly(
+                                uuid=str(uuid.uuid4()),
+                                title=current_state.lower(),
+                                start_time=anomaly_start,
+                                end_time=anomaly_end,
+                                note="auto-logged via ble stream",
+                                duration=duration,
+                                severity=severity,
+                            )
+                            session.add(anomaly)
+                            print(f"adding {anomaly.to_dict()}")
+                            session.commit()
+
+            chunk_50.append(value)
+            if len(chunk_50) == BUFFER_STREAM:
+                payload = {
+                    "type": "sensor_chunk",
+                    "timestamp": now.isoformat(),
+                    "values": chunk_50.copy(),
+                    "bluetooth_connected": bluetooth_manager.is_connected,
+                }
+                # attach anomaly field while episode is active
+                if in_anomaly:
+                    payload["anomaly"]      = {"start": anomaly_start.isoformat()}
+                    payload["anomaly_type"] = current_state
+
+                if anomaly_end is not None:
+                    payload["anomaly"] = {
+                        "start": anomaly_start.isoformat(),
+                        "end":   anomaly_end.isoformat(),
+                    }
+
+                    anomaly_start = None
+                    anomaly_end = None
+
+                # broadcast to all connected websocket clients
+                asyncio.get_running_loop().create_task(
+                    websocket_server.broadcast_data(payload)
+                )
+
+                chunk_50.clear()  # ready for next chunk
+
+            device_state["device_data"] = value
             self.last_data_time = datetime.now()
 
         except Exception as e:
             logger.error(f"Error in notification handler: {e}")
 
     def handle_disconnect(self, client):
-        """
-        Callback method triggered on Bluetooth disconnection. Updates the connection
-        status and initiates a reconnection attempt.
-        """
-        logger.warning("Device disconnected, attempting to reconnect...")
+        """handler for unexpected ble disconnections. attempts to send stop command 'E'."""
+        logger.warning("device disconnected, attempting to reconnect...")
+        
+        # try to send stop command 'E' if the logic allows
+        try:
+            for service in client.services:
+                for char in service.characteristics:
+                    if convertUUIDtoShortID(char.uuid) == "fff1":
+                        # this is a best-effort attempt on disconnect
+                        asyncio.get_running_loop().create_task(
+                            client.write_gatt_char(char.uuid, b"E", response=True)
+                        )
+                        break
+        except:
+            pass
+
         self.is_connected = False
         device_state["bluetooth_connected"] = False
         if not self._lock.locked():
