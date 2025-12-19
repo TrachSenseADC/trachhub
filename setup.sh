@@ -35,7 +35,7 @@ mkdir -p "$INSTALL_DIR" || { echo "Could not create installation directory. Chec
 # Install system dependencies and tools required for TrachHub
 echo -e "\nStep 3/7: Installing required system tools..."
 sudo apt-get update -qq
-sudo apt-get install -y -qq python3 python3-pip git
+sudo apt-get install -y -qq python3 python3-pip git libatlas-base-dev libdbus-1-dev build-essential libffi-dev libssl-dev
 
 # Install PostgreSQL 13 and build TimescaleDB from source
 echo -e "\nStep 4/7: Installing PostgreSQL 13 and TimescaleDB..."

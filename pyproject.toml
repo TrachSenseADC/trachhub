@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
     "flask",
-    "bleak",
+    "bleak<0.22.0",
     "hypercorn",
     "sqlalchemy",
     "websockets",
