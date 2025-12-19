@@ -155,13 +155,7 @@ class BluetoothManager:
                     address, disconnected_callback=self.handle_disconnect
                 )
                 await self.client.connect()
-                self.is_connected = True
-                self.reconnect_attempts = 0
-                self.last_data_time = datetime.now()
-                device_state["bluetooth_connected"] = True
-                device_state["last_bluetooth_connection"] = datetime.now().isoformat()
-                logger.info(f"Connected to device: {address}")
-
+                
                 services = self.client.services
                 for service in services:
                     for char in service.characteristics:
@@ -172,11 +166,30 @@ class BluetoothManager:
                             await self.client.start_notify(char.uuid, self.notification_handler)
                             
                 logger.info("Finished subscribing to characteristics.")
+                
+                # Only set connected state AFTER everything succeeds
+                self.is_connected = True
+                self.reconnect_attempts = 0
+                self.last_data_time = datetime.now()
+                device_state["bluetooth_connected"] = True
+                device_state["last_bluetooth_connection"] = datetime.now().isoformat()
+                logger.info(f"Connected to device: {address}")
+                
+                # Broadcast connection status to WebSocket clients
+                asyncio.create_task(websocket_server.broadcast_data({
+                    "type": "bluetooth_status",
+                    "bluetooth_connected": True,
+                    "device_address": address,
+                    "timestamp": datetime.now().isoformat()
+                }))
 
                 asyncio.create_task(self.monitor_connection())
                 return True
             except Exception as e:
                 logger.error(f"Failed to connect: {e}")
+                # Ensure state is reset on failure
+                self.is_connected = False
+                device_state["bluetooth_connected"] = False
                 return False
 
     def notification_handler(self, sender, data):
@@ -282,6 +295,17 @@ class BluetoothManager:
         logger.warning("Device disconnected, attempting to reconnect...")
         self.is_connected = False
         device_state["bluetooth_connected"] = False
+        
+        # Broadcast disconnection status to WebSocket clients
+        try:
+            asyncio.create_task(websocket_server.broadcast_data({
+                "type": "bluetooth_status",
+                "bluetooth_connected": False,
+                "timestamp": datetime.now().isoformat()
+            }))
+        except Exception as e:
+            logger.error(f"Failed to broadcast disconnect status: {e}")
+        
         if not self._lock.locked():
             asyncio.create_task(self.attempt_reconnect())
 
