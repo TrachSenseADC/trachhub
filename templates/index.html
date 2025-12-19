@@ -53,6 +53,11 @@
             Scan for Networks
           </button>
 
+          <button class="button secondary" onclick="skipWiFi()">
+            <i class="fas fa-forward"></i>
+            Skip WiFi Setup
+          </button>
+
           <div class="list-container" id="wifi-list"></div>
         </div>
 
@@ -515,27 +520,28 @@
           showStep("wifi-setup");
           await scanWiFi(wifiStatus.ssid);
 
+          // existing logic for when already connected
           if (wifiStatus.connected) {
-            const skipButton = document.createElement("button");
-            skipButton.className = "button secondary";
-            skipButton.innerHTML = `
-                        <i class="fas fa-forward"></i>
-                        Skip WiFi Setup (Connected to ${wifiStatus.ssid})
-                    `;
-            skipButton.onclick = () => {
-              showStatus(`Using existing WiFi connection: ${wifiStatus.ssid}`);
-              showStep("bluetooth-setup");
-              scanBluetooth();
-            };
-
-            const scanButton = document.querySelector("#wifi-setup .button");
-            scanButton.parentNode.insertBefore(skipButton, scanButton);
+            const skipButton = document.querySelector("#wifi-setup .button.secondary");
+            if (skipButton) {
+                skipButton.innerHTML = `
+                            <i class="fas fa-forward"></i>
+                            Skip WiFi Setup (Connected to ${wifiStatus.ssid})
+                        `;
+            }
           }
         } catch (error) {
           console.error("Error checking WiFi status:", error);
           showStep("wifi-setup");
           scanWiFi();
         }
+      }
+
+      function skipWiFi() {
+        // skip directly to bluetooth setup
+        showStatus("skipping wifi setup");
+        showStep("bluetooth-setup");
+        scanBluetooth();
       }
 
       async function scanWiFi(currentSsid = null) {

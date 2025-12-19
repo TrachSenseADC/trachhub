@@ -166,7 +166,7 @@ class BluetoothManager:
                 for service in services:
                     for char in service.characteristics:
                         logger.info(f"Characteristic: {char.uuid}, Properties: {char.properties}")
-                        if "notify" in char.properties or "read" in char.properties:
+                        if "notify" in char.properties or "write" in char.properties:
                             logger.info(f"Subscribing to characteristic: {char.uuid}")
                             await self.client.start_notify(char.uuid, self.notification_handler)
                             
@@ -179,7 +179,7 @@ class BluetoothManager:
                 return False
 
     def notification_handler(self, sender, data):
-        """BLE notification -> stream out 50-value chunks + anomaly info."""
+        """ble notification -> stream out 50-value chunks + anomaly info."""
 
         global batch_100, chunk_50
         global in_anomaly, anomaly_start, anomaly_end, current_state
@@ -203,7 +203,7 @@ class BluetoothManager:
                             anomaly_start = now
                             anomaly_end = None
 
-                            print(f"Anomaly started: {current_state}")
+                            print(f"anomaly started: {current_state}")
 
                     else:  # back to normal
                         if in_anomaly:  # anomaly ends here
@@ -211,30 +211,30 @@ class BluetoothManager:
                             anomaly_end = now
                             duration = (anomaly_end - anomaly_start).total_seconds()
 
-                            # not sure how good of an idea this is
+                            # severity assessment based on duration
                             severity = (
                                 "high"
                                 if duration > 30
                                 else "medium" if duration > 10 else "low"
                             )
 
-                            print(f"Anomaly ended: {duration:.2f} s (sev={severity})")
-                            print("Logging anomaly to events DB")
+                            print(f"anomaly ended: {duration:.2f} s (sev={severity})")
+                            print("logging anomaly to events db")
 
-                            # havent tested this yet, but should work in theory, tomorrow
+                            # log anomaly to the database
                             with Session(engine) as session:
                                 anomaly = Anomaly(
                                     uuid=str(uuid.uuid4()),
                                     title=current_state.lower(),
                                     start_time=anomaly_start,
                                     end_time=anomaly_end,
-                                    note="Auto-logged via BLE stream",
+                                    note="auto-logged via ble stream",
                                     duration=duration,
                                     severity=severity,
                                 )
                                 session.add(anomaly)
 
-                                print("Adding {}", anomaly.to_dict())
+                                print("adding {}", anomaly.to_dict())
                                 session.commit()
 
                 chunk_50.append(value)
@@ -259,11 +259,12 @@ class BluetoothManager:
                         anomaly_start = None
                         anomaly_end = None
 
+                    # broadcast to all connected websocket clients
                     asyncio.get_running_loop().create_task(
                         websocket_server.broadcast_data(payload)
                     )
 
-                    chunk_50.clear()  # ready for next 10
+                    chunk_50.clear()  # ready for next chunk
 
                 device_state["device_data"] = value
             
