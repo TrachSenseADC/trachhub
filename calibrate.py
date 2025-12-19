@@ -24,6 +24,8 @@ def calibrate(a, b, c, diff, gas_reading):
     x = (math.log((1-(abs/a)))/(-b))**(1/c)
 
     # convert to mmHg
+    if x < 0:
+        return 0 # small tweak for now, this is an invalid reading since the trachsense is stationary
     return x * 7.6
 
 # print(calibrate(A, B, C, 2118, GAS_READING))

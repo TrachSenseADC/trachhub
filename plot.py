@@ -53,28 +53,58 @@ class LivePlotter:
         self.fig.canvas.flush_events()
         plt.pause(0.001)
 
-# global instance for the convenience function
 _plotter_instance = None
 
 def plot_live_co2(calibrated_value):
-    """
-    convenience function to plot a single co2 point live.
-    usage: from plot import plot_live_co2; plot_live_co2(45.2)
-    """
     global _plotter_instance
     if _plotter_instance is None:
         _plotter_instance = LivePlotter()
     _plotter_instance.update(calibrated_value)
 
-# demo mode if run directly
-if __name__ == "__main__":
-    print("starting plot demo...")
+def plot_csv(csv_path, replay=False, delay=0.01):
+    """
+    reads a csv file (time,on,off,diff) and plots calibrated co2.
+    if replay is true, it simulates the stream.
+    """
+    import csv
+    from calibrate import calibrate
+    from CONSTANTS import A, B, C, GAS_READING
+    
+    data_points = []
     try:
-        while True:
-            # simulate a breathing wave
-            t = time.time()
-            sim_value = 20 + 15 * np.sin(2 * np.pi * 0.2 * t) + np.random.normal(0, 0.5)
-            plot_live_co2(sim_value)
-            time.sleep(0.04) # ~25fps
-    except KeyboardInterrupt:
-        print("\nplot demo stopped.")
+        with open(csv_path, 'r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                try:
+                    diff = float(row['diff'])
+                    calibrated = calibrate(A, B, C, diff, GAS_READING)
+                    data_points.append(calibrated)
+                except:
+                    continue
+    except Exception as e:
+        print(f"error reading csv: {e}")
+        return
+
+    if not data_points:
+        print("no valid data found in csv.")
+        return
+
+    if replay:
+        for val in data_points:
+            plot_live_co2(val)
+            time.sleep(delay)
+    else:
+        # static plot
+        plt.ioff() # turn off interactive mode for static plot
+        plt.style.use('dark_background')
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(data_points, color='#00ffcc', linewidth=1.5)
+        ax.set_title(f'Static CO2 Data: {csv_path}', fontsize=14, color='white')
+        ax.set_xlabel('Sample Index', fontsize=12, color='gray')
+        ax.set_ylabel('Calibrated CO2 (mmHg)', fontsize=12, color='gray')
+        ax.grid(True, linestyle='--', alpha=0.3)
+        plt.show()
+
+
+if __name__ == "__main__":
+    plot_csv("diff.csv", replay=False)

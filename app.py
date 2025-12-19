@@ -63,6 +63,10 @@ import uuid
 from calibrate import calibrate
 from CONSTANTS import A, B, C, GAS_READING
 from plot import plot_live_co2
+from logger import DataLoggerCSV
+
+diff_logger = None
+
 
 BUFFER_ANALYZER = 100
 BUFFER_STREAM = 1
@@ -238,10 +242,12 @@ class BluetoothManager:
                         await self.client.write_gatt_char(cmd_char.uuid, b"S", response=True)
                 
                 logger.info("bluetooth connection sequence finished.")
-                logger.info(f"Subscribing to characteristic: {char.uuid}")
-                await self.client.start_notify(char.uuid, self.notification_handler)
-                            
-                logger.info("Finished subscribing to characteristics.")
+                
+                # establish logger for this session
+                global diff_logger
+                diff_logger = DataLoggerCSV("diff.csv")
+                
+                logger.info("session logger initialized.")
                 
                 # Only set connected state AFTER everything succeeds
                 self.is_connected = True
@@ -284,7 +290,19 @@ class BluetoothManager:
             calibrated_co2 = calibrate(A, B, C, value, GAS_READING)
             logger.info(f"diff: {value} | calculated: {calibrated_co2}")
             
-            # live plotting
+            # data logging (raw/diff)
+            if diff_logger:
+                try:
+                    diff_logger.log({
+                        "time": parsed["time"],
+                        "on": parsed["on"],
+                        "off": parsed["off"],
+                        "diff": parsed["diff"]
+                    })
+                except Exception as e:
+                    logger.error(f"logging error: {e}")
+            
+            # live plotting (calibrated)
             try:
                 plot_live_co2(calibrated_co2)
             except Exception as e:
@@ -370,7 +388,7 @@ class BluetoothManager:
             self.last_data_time = datetime.now()
 
         except Exception as e:
-            logger.error(f"Error in notification handler: {e}")
+            logger.error(f"error in notification handler: {e}")
 
     def handle_disconnect(self, client):
         """handler for unexpected ble disconnections. attempts to send stop command 'E'."""
@@ -402,6 +420,15 @@ class BluetoothManager:
         except Exception as e:
             logger.error(f"Failed to broadcast disconnect status: {e}")
         
+        # close session logger
+        global diff_logger
+        if diff_logger:
+            try:
+                diff_logger.close()
+                logger.info("session logger closed.")
+            except:
+                pass
+            diff_logger = None
         if not self._lock.locked():
             asyncio.create_task(self.attempt_reconnect())
 
