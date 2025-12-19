@@ -4,3 +4,6 @@ hypercorn
 sqlalchemy
 websockets
 dotenv
+matplotlib 
+numpy 
+psycopg2 
