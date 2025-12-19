@@ -613,7 +613,7 @@ def run_bluetooth_scan():
             {
                 "name": dev.name or "Unknown Device",
                 "address": dev.address,
-                "rssi": dev.rssi,
+                # "rssi": dev.rssi,
             }
             for dev in devices
         ]
