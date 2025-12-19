@@ -233,11 +233,8 @@ class BluetoothManager:
                         await self.client.write_gatt_char(cmd_char.uuid, b"S", response=True)
                 
                 logger.info("bluetooth connection sequence finished.")
-                        logger.info(f"Characteristic: {char.uuid}, Properties: {char.properties}")
-                        print("65523" in char.properties)
-                        if "notify" in char.properties or "read" in char.properties:
-                            logger.info(f"Subscribing to characteristic: {char.uuid}")
-                            await self.client.start_notify(char.uuid, self.notification_handler)
+                logger.info(f"Subscribing to characteristic: {char.uuid}")
+                await self.client.start_notify(char.uuid, self.notification_handler)
                             
                 logger.info("Finished subscribing to characteristics.")
                 
