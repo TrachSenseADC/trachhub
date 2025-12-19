@@ -62,6 +62,7 @@ import uuid
 
 from calibrate import calibrate
 from CONSTANTS import A, B, C, GAS_READING
+from plot import plot_live_co2
 
 BUFFER_ANALYZER = 100
 BUFFER_STREAM = 1
@@ -280,7 +281,14 @@ class BluetoothManager:
             
             # using calculated 'diff' for breathing patterns
             value = parsed["diff"]
-            logger.info(f"diff: {value} | calculated: {calibrate(A, B, C, value, GAS_READING)}")
+            calibrated_co2 = calibrate(A, B, C, value, GAS_READING)
+            logger.info(f"diff: {value} | calculated: {calibrated_co2}")
+            
+            # live plotting
+            try:
+                plot_live_co2(calibrated_co2)
+            except Exception as e:
+                logger.error(f"plotting error: {e}")
             
             now = datetime.now(tz=timezone.utc)
 
