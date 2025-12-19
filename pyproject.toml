@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-    "matplotlib>=3.10.8",
-    "numpy>=2.3.5",
-    "psycopg2>=2.9.11",
+    "matplotlib",
+    "numpy",
+    "psycopg2",
 ]
