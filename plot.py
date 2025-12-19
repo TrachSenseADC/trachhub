@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 from collections import deque
 import time
-import numpy as np
+# import numpy as np
 
 class LivePlotter:
     def __init__(self, max_points=200):
