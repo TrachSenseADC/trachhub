@@ -65,7 +65,14 @@ from CONSTANTS import A, B, C, GAS_READING
 from plot import plot_live_co2
 from logger import DataLoggerCSV
 
-diff_logger = None
+# Argument parsing for debug mode
+import argparse
+parser = argparse.ArgumentParser(description="TrachHub Server")
+parser.add_argument("--debug", action="store_true", help="enable developer debug features (internal emulator)")
+args, unknown = parser.parse_known_args()
+DEBUG_MODE = args.debug
+
+diff_logger = DataLoggerCSV(os.path.join(os.path.dirname(__file__), "diff.csv"))
 
 
 BUFFER_ANALYZER = 100
@@ -209,6 +216,14 @@ class BluetoothManager:
                     await self.client.disconnect()
 
                 self.device_address = address
+                
+                if address == "EMULATOR" and DEBUG_MODE:
+                    logger.info("routing connection to internal emulator...")
+                    self.is_connected = True
+                    device_state["bluetooth_connected"] = True
+                    asyncio.create_task(self.run_mock_stream())
+                    return True
+
                 self.client = BleakClient(
                     address, disconnected_callback=self.handle_disconnect
                 )
@@ -231,23 +246,22 @@ class BluetoothManager:
                 if stream_char:
                     logger.info(f"subscribing to {stream_char.uuid}")
                     await self.client.start_notify(stream_char.uuid, self.notification_handler)
-
-                    if config_char:
-                        logger.info(f"sending config to {config_char.uuid}")
-                        packet = build_config_packet()
-                        await self.client.write_gatt_char(config_char.uuid, packet, response=True)
                     
-                    if cmd_char:
-                        logger.info(f"sending start command 'S' to {cmd_char.uuid}")
-                        await self.client.write_gatt_char(cmd_char.uuid, b"S", response=True)
-                
+                    # If we got here, the core connection/subscription is active
+                    # Handshake steps (config/start) are important but we allow minor failures
+                    try:
+                        if config_char:
+                            logger.info(f"sending config to {config_char.uuid}")
+                            packet = build_config_packet()
+                            await self.client.write_gatt_char(config_char.uuid, packet, response=True)
+                        
+                        if cmd_char:
+                            logger.info(f"sending start command 'S' to {cmd_char.uuid}")
+                            await self.client.write_gatt_char(cmd_char.uuid, b"S", response=True)
+                    except Exception as gatt_err:
+                        logger.warning(f"GATT handshake warning (non-fatal): {gatt_err}")
+
                 logger.info("bluetooth connection sequence finished.")
-                
-                # establish logger for this session
-                global diff_logger
-                diff_logger = DataLoggerCSV("diff.csv")
-                
-                logger.info("session logger initialized.")
                 
                 # Only set connected state AFTER everything succeeds
                 self.is_connected = True
@@ -426,11 +440,28 @@ class BluetoothManager:
             try:
                 diff_logger.close()
                 logger.info("session logger closed.")
-            except:
-                pass
-            diff_logger = None
+            except Exception as e:
+                logger.error(f"error closing logger: {e}")
+        
         if not self._lock.locked():
             asyncio.create_task(self.attempt_reconnect())
+
+
+    async def run_mock_stream(self):
+        """simulates the data stream from a trachsense device."""
+        logger.info("VIRTUAL EMULATOR: starting data stream")
+        from trachsense_emulator import TrachSenseEmulator
+        emulator = TrachSenseEmulator()
+        
+        try:
+            while self.is_connected and self.device_address == "EMULATOR":
+                packet, on, off, diff = emulator.generate_packet()
+                self.notification_handler(None, packet)
+                await asyncio.sleep(0.1)
+        except Exception as e:
+            logger.error(f"VIRTUAL EMULATOR error: {e}")
+        finally:
+            logger.info("VIRTUAL EMULATOR: stop streaming")
 
     async def attempt_reconnect(self):
         """
@@ -609,14 +640,20 @@ def run_bluetooth_scan():
     asyncio.set_event_loop(loop)
     try:
         devices = loop.run_until_complete(BleakScanner.discover())
-        return [
+        results = [
             {
                 "name": dev.name or "Unknown Device",
                 "address": dev.address,
-                # "rssi": dev.rssi,
             }
             for dev in devices
         ]
+        # inject emulator for easy testing only in debug mode
+        if DEBUG_MODE:
+            results.insert(0, {
+                "name": "TrachSense Emulator (VIRTUAL)",
+                "address": "EMULATOR",
+            })
+        return results
     except Exception as e:
         logger.error(f"Error scanning Bluetooth: {e}")
         return []

@@ -15,3 +15,8 @@ dependencies = [
     "numpy",
     "psycopg2",
 ]
+
+[dependency-groups]
+dev = [
+    "bless",
+]
