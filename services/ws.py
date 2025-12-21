@@ -25,10 +25,9 @@ logger = None
 class WebSocketServer:
     def __init__(self, log, ble_manager):
         self.connected_clients = set()
-        self.loop = asyncio.get_event_loop()
         self.server = None
-        self.broadcast_lock = asyncio.Lock()
-        self.client_connected = asyncio.Event()
+        self.broadcast_lock = None # initialized in start/broadcast
+        self.client_connected = None # initialized in start
         self.logger = log
         self.bluetooth_manager = ble_manager
 
@@ -36,7 +35,7 @@ class WebSocketServer:
         """Handle new WebSocket connections"""
         # path = websocket.path
         client_address = websocket.remote_address[0]
-        self.logger.info(f"New WebSocket client connected: {client_address}")
+        self.logger.info(f"new websocket client connected: {client_address}")
 
         if not self.connected_clients:
             self.client_connected.set()
@@ -48,16 +47,16 @@ class WebSocketServer:
                     {
                         "type": "connection_status",
                         "status": "connected",
-                        "message": "Connected to TrachHub data stream",
+                        "message": "connected to trachhub data stream",
                     }
                 )
             )
 
             async for message in websocket:
-                logger.debug(f"Received message from {client_address}: {message}")
+                logger.debug(f"received message from {client_address}: {message}")
 
         except websockets.exceptions.ConnectionClosed:
-            self.logger.info(f"WebSocket client disconnected: {client_address}")
+            self.logger.info(f"websocket client disconnected: {client_address}")
         finally:
             self.connected_clients.remove(websocket)
             if not self.connected_clients:
@@ -80,6 +79,9 @@ class WebSocketServer:
         if not self.connected_clients:
             return
 
+        if self.broadcast_lock is None:
+            self.broadcast_lock = asyncio.Lock()
+
         async with self.broadcast_lock:
             for ws in list(self.connected_clients):
                 try:
@@ -89,13 +91,35 @@ class WebSocketServer:
 
 
     async def start(self, host="0.0.0.0", port=8765):
-        """Start the WebSocket server"""
-        self.server = await websockets.serve(self.handler, host, port)
-        self.logger.info(f"WebSocket server started on ws://{host}:{port}")
+        """start the websocket server"""
+        if self.broadcast_lock is None:
+            self.broadcast_lock = asyncio.Lock()
+        if self.client_connected is None:
+            self.client_connected = asyncio.Event()
+
+        try:
+            self.server = await websockets.serve(self.handler, host, port)
+            self.logger.info(f"websocket server started on ws://{host}:{port}")
+            await self.server.wait_closed()
+        except asyncio.CancelledError:
+            self.logger.info("websocket server task cancelled, closing...")
+            if self.server:
+                self.server.close()
+                await self.server.wait_closed()
+        except OSError as e:
+            # address already in use (48 on mac, 98 on linux, 10048 on windows)
+            if getattr(e, 'errno', None) in (48, 98, 10048):
+                self.logger.warning(f"websocket port {port} already in use, skipping server start")
+                return
+            self.logger.error(f"websocket server os error: {e}")
+            raise
+        except Exception as e:
+            self.logger.error(f"websocket server error: {e}")
+            raise
 
     async def stop(self):
         """Stop the WebSocket server"""
         if self.server:
             self.server.close()
             await self.server.wait_closed()
-            self.logger.info("WebSocket server stopped")
+            self.logger.info("websocket server stopped")
