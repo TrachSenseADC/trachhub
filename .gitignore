@@ -31,7 +31,7 @@ __pycache__/
 .env
 
 bluetooth_review.md
-# bt_check.py 
+bt_check.py 
 test_diff.csv 
 verify_logic.py 
 
