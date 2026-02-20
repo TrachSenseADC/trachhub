@@ -207,7 +207,8 @@ class BluetoothManager:
                 return
             
             value = parsed["diff"]
-            calibrated_co2 = calibrate(A, B, C, value, GAS_READING)
+            # simple=TRue keeps it the same
+            calibrated_co2 = calibrate(A, B, C, value, GAS_READING, simple=True)
             # Log every reading for now to debug missing values
             logger.info(f"data received: diff={value} | co2={calibrated_co2:.2f}")
             

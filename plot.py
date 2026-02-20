@@ -77,7 +77,8 @@ def plot_csv(csv_path, replay=False, delay=0.01):
             for row in reader:
                 try:
                     diff = float(row['diff'])
-                    calibrated = calibrate(A, B, C, diff, GAS_READING)
+                    # simple=True keeps it the same
+                    calibrated = calibrate(A, B, C, diff, GAS_READING, simple=True)
                     data_points.append(calibrated)
                 except:
                     continue

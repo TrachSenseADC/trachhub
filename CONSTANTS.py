@@ -1,4 +1,7 @@
-A = 1.2126 
-B = 0.0251
-C = 0.7508
-GAS_READING = 2143 
+A = 0.985
+B = 0.235
+C = 0.857
+GAS_READING = 2141 
+
+
+## DO NOT EDIT 
