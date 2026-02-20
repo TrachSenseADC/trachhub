@@ -97,8 +97,12 @@ class BluetoothManager:
         self.stream_task = None
         
         self.data_queue = queue.Queue()
+        self._loop = None  # the event loop where bleak client lives
 
     async def connect(self, address):
+        # capture the loop that bleak will run on
+        if self._loop is None:
+            self._loop = asyncio.get_running_loop()
         if self._lock is None:
             self._lock = asyncio.Lock()
         async with self._lock:

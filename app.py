@@ -92,6 +92,9 @@ def health_check():
 
 async def run_servers(shutdown_event: asyncio.Event):
     """starts background services."""
+    # capture the main event loop for ble operations
+    bluetooth_manager._loop = asyncio.get_running_loop()
+
     # start websocket and stream supervisor
     ws_task = asyncio.create_task(websocket_server.start(port=8766))
     supervisor_task = asyncio.create_task(bluetooth_manager.stream_supervisor())
