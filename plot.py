@@ -24,8 +24,8 @@ class LivePlotter:
         self.ax.grid(True, linestyle='--', alpha=0.3)
         self.ax.legend(loc='upper right')
         
-        # dynamic axis limits
-        self.ax.set_ylim(0, 50) # default CO2 range, will auto-adjust if needed
+        # dynamic axis limits (will auto-adjust based on data)
+        self.ax.set_ylim(-10, 10)
         
         # prevent window from freezing
         self.fig.canvas.draw()
@@ -44,9 +44,12 @@ class LivePlotter:
         if len(self.x_data) > 0:
             self.ax.set_xlim(max(0, current_time - 20), current_time + 2)
         
-        # auto-adjust y-axis if values exceed current limits
-        if calibrated_value > self.ax.get_ylim()[1]:
-            self.ax.set_ylim(0, calibrated_value * 1.2)
+        # auto-adjust y-axis using min/max with 10% padding
+        if len(self.y_data) > 1:
+            y_min = min(self.y_data)
+            y_max = max(self.y_data)
+            margin = max(abs(y_max - y_min) * 0.1, 5)  # at least 5 units of padding
+            self.ax.set_ylim(y_min - margin, y_max + margin)
         
         # refresh
         self.fig.canvas.draw()
