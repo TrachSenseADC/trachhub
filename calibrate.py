@@ -1,6 +1,7 @@
 
 
 """
+hii
 diff - value we care about 
 transmittance - diff / (gas/sensor readings) given 
 absorption - 1 - transmittance 
@@ -28,7 +29,6 @@ def calibrate(a, b, c, diff, gas_reading, simple=False):
     if inner <= 0:
         return 0  # reading is outside the model's valid range
 
-    print(inner)
     base = math.log(inner) / (-b)
     if base < 0:
         return 0  # negative base with fractional exponent would produce complex
