@@ -3,5 +3,4 @@ B = 0.078172
 C = 0.508625
 GAS_READING = 11553
 
-## test
 ## DO NOT EDIT 
