@@ -3,4 +3,4 @@ B = 0.078172
 C = 0.508625
 GAS_READING = 11553
 
-## DO NOT EDIT 
+## Currently device 5 coeff 
